@@ -5,7 +5,24 @@ Created on 06/05/2011
 '''
 import threading
 
+#Why the hell "import spotify" does not work?
+from spotify import image as _image, BulkConditionChecker
+
 import cherrypy
+
+
+
+class ImageCallbacks(_image.ImageCallbacks):
+    __checker = None
+    
+    
+    def __init__(self, checker):
+        self.__checker = checker
+    
+    
+    def image_loaded(self, image):
+        self.__checker.check_conditions()
+
 
 
 class Image:
@@ -18,7 +35,19 @@ class Image:
     
     @cherrypy.expose
     def default(self, image_id):
-        return "image"
+        img = _image.create(self.__session, image_id)
+        checker = BulkConditionChecker()
+        img_cb = ImageCallbacks(checker)
+        img.add_load_callback(img_cb)
+        checker.complete_wait(10)
+        
+        #Fail if image was not loaded or wrong format
+        if not img.is_loaded() or img.format() != _image.ImageFormat.JPEG:
+            raise cherrypy.HTTPError(500)
+        
+        else:
+            cherrypy.response.headers["Content-Type"] = "image/jpeg"
+            return img.data()
 
 
 
