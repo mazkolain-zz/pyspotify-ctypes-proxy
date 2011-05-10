@@ -39,7 +39,9 @@ class Image:
         checker = BulkConditionChecker()
         img_cb = ImageCallbacks(checker)
         img.add_load_callback(img_cb)
-        checker.complete_wait(10)
+        
+        #Wait 30 secs or timeout
+        checker.complete_wait(30)
         
         #Fail if image was not loaded or wrong format
         if not img.is_loaded() or img.format() != _image.ImageFormat.JPEG:
