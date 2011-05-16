@@ -6,7 +6,7 @@ Created on 06/05/2011
 import threading
 
 #Why the hell "import spotify" does not work?
-from spotify import image as _image, BulkConditionChecker
+from spotify import image as _image, BulkConditionChecker, link, session
 
 import cherrypy
 
@@ -37,6 +37,7 @@ class Image:
     def default(self, image_id):
         img = _image.create(self.__session, image_id)
         checker = BulkConditionChecker()
+        checker.add_condition(img.is_loaded)
         img_cb = ImageCallbacks(checker)
         img.add_load_callback(img_cb)
         
@@ -53,18 +54,85 @@ class Image:
 
 
 
+class TrackLoadCallback(session.SessionCallbacks):
+    __checker = None
+    
+    
+    def __init__(self, checker):
+        self.__checker = checker
+    
+    
+    def metadata_updated(self, session):
+        self.__checker.check_conditions()
+
+
+
 class Track:
     __session = None
+    __audio_buffer = None
     __is_playing = None
     
     
-    def __init__(self, session):
+    def __init__(self, session, audio_buffer):
+        self.__session = session
+        self.__audio_buffer = audio_buffer
         self.__is_playing = False
+    
+    
+    def _load_track(self, track_id):
+        full_id = "spotify:track:%s" % track_id
+        track = link.create_from_string(full_id).as_track()
+        
+        #Set callbacks for loading the track
+        checker = BulkConditionChecker()
+        checker.add_condition(track.is_loaded)
+        callbacks = TrackLoadCallback(checker)
+        self.__session.add_callbacks(callbacks)
+        
+        #Wait until it's done (should be enough)
+        checker.complete_wait(15)
+        
+        #Remove that callback, or will be around forever
+        self.__session.remove_callbacks(callbacks)
+        
+        #Fail if after the wait it's still unusable
+        if not track.is_loaded():
+            raise cherrypy.HTTPError(500)
+        else:
+            return track
+    
+    
+    def _write_frames(self):
+        import StringIO, time
+        
+        counter = 0
+        file = StringIO.StringIO()
+        while counter < 10:
+            frame = self.__audio_buffer.next_frame()
+            if frame is not None:
+                file.write(frame.data)
+                counter += 1
+            else:
+                #A little bit of punishment
+                time.sleep(0.1)
+        
+        return file.getvalue()
     
     
     @cherrypy.expose
     def default(self, track_id):
-        return "track requested: %s" % track_id
+        #Ensure that the track object is loaded
+        track = self._load_track(track_id)
+        
+        #Load track audio...
+        #these should go to somewere like _populate_buffer
+        self.__session.player_load(track)
+        self.__session.player_play(True)
+        
+        #Write the actual content
+        while True:
+            yield self._write_frames()
+        
     
     default._cp_config = {'response.stream': True}
 
@@ -77,17 +145,17 @@ class Root:
     track = None
     
     
-    def __init__(self, session):
+    def __init__(self, session, audio_buffer):
         self.__session = session
         self.image = Image(session)
-        self.track = Track(session)
+        self.track = Track(session, audio_buffer)
 
 
 
 class ProxyRunner(threading.Thread):
-    def __init__(self, session):
+    def __init__(self, session, audio_buffer):
         threading.Thread.__init__(self)
-        cherrypy.tree.mount(Root(session), "/")
+        cherrypy.tree.mount(Root(session, audio_buffer), "/")
     
     def run(self):
         cherrypy.engine.start()
