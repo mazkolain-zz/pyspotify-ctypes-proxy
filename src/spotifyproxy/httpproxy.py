@@ -6,7 +6,7 @@ Created on 06/05/2011
 import threading
 
 #Why the hell "import spotify" does not work?
-from spotify import image as _image, BulkConditionChecker, link, session
+from spotify import image as _image, BulkConditionChecker, link, session, SampleType
 
 import cherrypy
 
@@ -102,6 +102,93 @@ class Track:
             return track
     
     
+    def _write_wave_header(self, numsamples, channels, samplerate, bitspersample, initial_data):
+        import StringIO, struct
+        file = StringIO.StringIO()
+        
+        #Generate format chunk
+        format_chunk_spec = "<4sLHHLLHH"
+        format_chunk = struct.pack(
+            format_chunk_spec,
+            "fmt ", #Chunk id
+            16, #Size of this chunk (excluding chunk id and this field)
+            1, #Audio format, 1 for PCM
+            channels, #Number of channels
+            samplerate, #Samplerate, 44100, 48000, etc.
+            samplerate * channels * (bitspersample / 8), #Byterate
+            channels * (bitspersample / 8), #Blockalign
+            bitspersample, #16 bits for two byte samples, etc.
+        )
+        
+        #Generate data chunk
+        data_chunk_spec = "<4sL"
+        datasize = numsamples * channels * (bitspersample / 8)
+        data_chunk = struct.pack(
+            data_chunk_spec,
+            "data", #Chunk id
+            datasize, #Chunk size (excluding chunk id and this field)
+        )
+        
+        sum_items = [
+            #"WAVE" string following size field
+            4,
+            
+            #"fmt " + chunk size field + chunk size
+            struct.calcsize(format_chunk_spec),
+            
+            #Size of data chunk spec + data size
+            struct.calcsize(data_chunk_spec) + datasize
+        ]
+        
+        #Generate main header
+        main_header_spec = "<4sL4s"
+        main_header = struct.pack(
+            main_header_spec,
+            "RIFF",
+            sum(sum_items),
+            "WAVE"
+        )
+        
+        #Write all the contents in
+        file.write(main_header)
+        file.write(format_chunk)
+        file.write(data_chunk)
+        file.write(initial_data)
+        
+        return file.getvalue()
+    
+    
+    def _get_sample_width(self, sample_type):
+        if sample_type == SampleType.Int16NativeEndian:
+            return 16
+        
+        else:
+            return -1
+    
+    
+    def _write_file_header(self, track):
+        import time
+        
+        while True:
+            frame = self.__audio_buffer.next_frame()
+            if frame is None:
+                #Wait until there's at least one available
+                time.sleep(0.1)
+            
+            else:
+                #Current sample duration (ms)
+                framelen_ms = frame.num_samples * 1.0 / (frame.sample_rate / 1000)
+                
+                #Calculate number of samples
+                num_samples = track.duration() * frame.num_samples / framelen_ms
+                
+                #Build the whole header
+                return self._write_wave_header(
+                    num_samples, frame.num_channels, frame.sample_rate,
+                    self._get_sample_width(frame.sample_type), frame.data
+                )
+    
+    
     def _write_frames(self):
         import StringIO, time
         
@@ -121,13 +208,18 @@ class Track:
     
     @cherrypy.expose
     def default(self, track_id):
+        cherrypy.response.headers['Content-Type'] = 'audio/x-wav'
+        
         #Ensure that the track object is loaded
         track = self._load_track(track_id)
         
         #Load track audio...
-        #these should go to somewere like _populate_buffer
+        #these should go to somewhere like _populate_buffer
         self.__session.player_load(track)
         self.__session.player_play(True)
+        
+        #Write the file header
+        yield self._write_file_header(track)
         
         #Write the actual content
         while True:
