@@ -195,7 +195,8 @@ class Track:
         
         counter = 0
         file = StringIO.StringIO()
-        while counter < 10:
+        
+        while counter < 10 and self.__audio_buffer.is_audio_available():
             frame = self.__audio_buffer.next_frame()
             if frame is not None:
                 file.write(frame.data)
@@ -226,8 +227,14 @@ class Track:
         yield data
         
         #Write the actual content
-        while True:
+        while self.__audio_buffer.is_audio_available():
             yield self._write_frames()
+        
+        #Inform libspotify
+        self.__session.player_unload()
+        
+        #End this stream
+        return
         
     
     default._cp_config = {'response.stream': True}

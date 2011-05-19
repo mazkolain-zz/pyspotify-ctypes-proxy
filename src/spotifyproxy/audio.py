@@ -59,9 +59,19 @@ class MemoryBuffer:
             return num_samples
     
     
+    def set_track_ended(self):
+        self.__track_ended = True
+    
+    
+    def is_audio_available(self):
+        return len(self.__queue) > 0 or not self.__track_ended
+    
+    
     def clear(self):
         self.__queue.clear()
         self.__stutter = 0
+        self.__frame_requests = 0
+        self.__track_ended = False
     
     
     def _next_frame(self):
@@ -71,13 +81,15 @@ class MemoryBuffer:
     def next_frame(self):
         self.__frame_requests += 1
         
-        #Try to return the next frame
-        try:
-            return self.__queue.popleft()
-        
-        #Buffer was empty
-        except IndexError:
-            self.__stutter += 1
+        #While there are frames to send
+        if self.is_audio_available():
+            #Try to return the next frame
+            try:
+                return self.__queue.popleft()
+            
+            #Buffer was empty
+            except IndexError:
+                self.__stutter += 1
     
     
     def _get_sample_count(self):
