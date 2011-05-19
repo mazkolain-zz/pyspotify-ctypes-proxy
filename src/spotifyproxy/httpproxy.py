@@ -141,11 +141,12 @@ class Track:
         ]
         
         #Generate main header
+        all_cunks_size = int(sum(sum_items))
         main_header_spec = "<4sL4s"
         main_header = struct.pack(
             main_header_spec,
             "RIFF",
-            int(sum(sum_items)),
+            all_cunks_size,
             "WAVE"
         )
         
@@ -155,7 +156,7 @@ class Track:
         file.write(data_chunk)
         file.write(initial_data)
         
-        return file.getvalue()
+        return file.getvalue(), all_cunks_size + 8
     
     
     def _get_sample_width(self, sample_type):
@@ -215,11 +216,14 @@ class Track:
         
         #Load track audio...
         #these should go to somewhere like _populate_buffer
+        self.__audio_buffer.clear()
         self.__session.player_load(track)
         self.__session.player_play(True)
         
         #Write the file header
-        yield self._write_file_header(track)
+        data, filesize = self._write_file_header(track)
+        cherrypy.response.headers['Content-Length'] = filesize
+        yield data
         
         #Write the actual content
         while True:

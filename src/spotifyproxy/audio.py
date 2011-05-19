@@ -20,7 +20,7 @@ class QueueItem:
 class MemoryBuffer:
     __queue = None
     __stutter = None
-    __event = None
+    __track_ended = None
     
     __frame_requests = 0
     
@@ -30,8 +30,7 @@ class MemoryBuffer:
     
     def __init__(self):
         self.__queue = deque()
-        self.__stutter = 0
-        self.__event = threading.Event()
+        self.clear()
     
     
     def music_delivery(self, data, num_samples, sample_type, sample_rate, num_channels):
@@ -57,26 +56,20 @@ class MemoryBuffer:
                 )
             )
             #print "md: queue len: %d" % len(self.__queue)
-            self.__event.set()
             return num_samples
-        
+    
     
     def clear(self):
         self.__queue.clear()
+        self.__stutter = 0
     
     
     def _next_frame(self):
-        
-        #print "_nf: queue len: %d" % len(self.__queue)
         return self.__queue.popleft()
     
     
     def next_frame(self):
-        #self.__event.wait(10)
-        #self.__event.clear()
-        
         self.__frame_requests += 1
-        #print "frame requests: %d" % self.__frame_requests
         
         #Try to return the next frame
         try:
