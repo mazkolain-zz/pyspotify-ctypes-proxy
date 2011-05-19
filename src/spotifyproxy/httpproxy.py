@@ -126,7 +126,7 @@ class Track:
         data_chunk = struct.pack(
             data_chunk_spec,
             "data", #Chunk id
-            datasize, #Chunk size (excluding chunk id and this field)
+            int(datasize), #Chunk size (excluding chunk id and this field)
         )
         
         sum_items = [
@@ -145,7 +145,7 @@ class Track:
         main_header = struct.pack(
             main_header_spec,
             "RIFF",
-            sum(sum_items),
+            int(sum(sum_items)),
             "WAVE"
         )
         
