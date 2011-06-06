@@ -208,9 +208,33 @@ class Track:
         return file.getvalue()
     
     
+    def _stream_output(self, initial_data):
+        yield initial_data
+        self.__session.player_play(True)
+        
+        #Write the actual content
+        while self.__audio_buffer.is_audio_available():
+            yield self._write_frames()
+        
+        #Inform libspotify
+        self.__session.player_unload()
+    
+    
+    def _check_headers(self):
+        method = cherrypy.request.method.upper()
+        if method not in ("GET", "HEAD"):
+            raise cherrypy.HTTPError(405)
+        return method
+    
+    
+    def _write_headers(self, filesize):
+        cherrypy.response.headers['Content-Type'] = 'audio/x-wav'
+        cherrypy.response.headers['Content-Length'] = filesize
+    
+    
     @cherrypy.expose
     def default(self, track_id):
-        cherrypy.response.headers['Content-Type'] = 'audio/x-wav'
+        method = self._check_headers()
         
         #Ensure that the track object is loaded
         track = self._load_track(track_id)
@@ -219,23 +243,14 @@ class Track:
         #these should go to somewhere like _populate_buffer
         self.__audio_buffer.clear()
         self.__session.player_load(track)
-        self.__session.player_play(True)
         
-        #Write the file header
-        data, filesize = self._write_file_header(track)
-        cherrypy.response.headers['Content-Length'] = filesize
-        yield data
+        #Calculate file size, and tell it
+        initial_data, filesize = self._write_file_header(track)
+        self._write_headers(filesize)
         
-        #Write the actual content
-        while self.__audio_buffer.is_audio_available():
-            yield self._write_frames()
-        
-        #Inform libspotify
-        self.__session.player_unload()
-        
-        #End this stream
-        return
-        
+        #If method was get, stream the actual content
+        if method == 'GET':
+            return self._stream_output(initial_data)
     
     default._cp_config = {'response.stream': True}
 
