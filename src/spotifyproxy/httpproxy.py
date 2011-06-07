@@ -10,6 +10,7 @@ from spotify import image as _image, BulkConditionChecker, link, session, Sample
 
 import cherrypy
 
+import re
 
 
 class ImageCallbacks(_image.ImageCallbacks):
@@ -80,6 +81,10 @@ class Track:
     
     
     def _load_track(self, track_id):
+        #Strip the optional extension...
+        r = re.compile('\.wav$', re.IGNORECASE)
+        track_id = re.sub(r, '', track_id)
+        
         full_id = "spotify:track:%s" % track_id
         track = link.create_from_string(full_id).as_track()
         
@@ -222,14 +227,22 @@ class Track:
     
     def _check_headers(self):
         method = cherrypy.request.method.upper()
+        
+        #Fail for other methods than get or head
         if method not in ("GET", "HEAD"):
             raise cherrypy.HTTPError(405)
+    
+        #Ranges? not yet!
+        elif "Range" in cherrypy.request.headers:
+            raise cherrypy.HTTPError(416)
+        
         return method
     
     
     def _write_headers(self, filesize):
         cherrypy.response.headers['Content-Type'] = 'audio/x-wav'
         cherrypy.response.headers['Content-Length'] = filesize
+        cherrypy.response.headers['Accept-Ranges'] = 'none'
     
     
     @cherrypy.expose
