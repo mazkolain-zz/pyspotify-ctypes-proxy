@@ -172,11 +172,11 @@ class Track:
             return -1
     
     
-    def _write_file_header(self, track):
+    def _write_file_header(self, buf, track):
         import time
         
-        while True:
-            frame = self.__audio_buffer.next_frame()
+        while buf.is_playing():
+            frame = buf.next_frame()
             if frame is None:
                 #Wait until there's at least one available
                 time.sleep(0.1)
@@ -195,14 +195,14 @@ class Track:
                 )
     
     
-    def _write_frames(self):
+    def _write_frames(self, buf):
         import StringIO, time
         
         counter = 0
         file = StringIO.StringIO()
         
-        while counter < 10 and self.__audio_buffer.is_audio_available():
-            frame = self.__audio_buffer.next_frame()
+        while counter < 10 and buf.is_playing():
+            frame = buf.next_frame()
             if frame is not None:
                 file.write(frame.data)
                 counter += 1
@@ -213,16 +213,20 @@ class Track:
         return file.getvalue()
     
     
-    def _stream_output(self, initial_data):
+    def _stream_output(self, buf, initial_data):
         yield initial_data
-        self.__session.player_play(True)
+        
+        buf.play()
         
         #Write the actual content
-        while self.__audio_buffer.is_audio_available():
-            yield self._write_frames()
+        while buf.is_playing():
+            yield self._write_frames(buf)
+        
+        if buf.is_canceled():
+            raise cherrypy.HTTPError(500)
         
         #Inform libspotify
-        self.__session.player_unload()
+        #self.__session.player_unload()
     
     
     def _check_headers(self):
@@ -243,6 +247,7 @@ class Track:
         cherrypy.response.headers['Content-Type'] = 'audio/x-wav'
         cherrypy.response.headers['Content-Length'] = filesize
         cherrypy.response.headers['Accept-Ranges'] = 'none'
+        cherrypy.response.headers['Connection'] = 'close'
     
     
     @cherrypy.expose
@@ -252,18 +257,20 @@ class Track:
         #Ensure that the track object is loaded
         track = self._load_track(track_id)
         
+        #Open the buffer
+        buf = self.__audio_buffer.open(self.__session, track)
+        
         #Load track audio...
         #these should go to somewhere like _populate_buffer
-        self.__audio_buffer.clear()
-        self.__session.player_load(track)
+        #self.__audio_buffer.clear()
         
         #Calculate file size, and tell it
-        initial_data, filesize = self._write_file_header(track)
+        initial_data, filesize = self._write_file_header(buf, track)
         self._write_headers(filesize)
         
         #If method was get, stream the actual content
         if method == 'GET':
-            return self._stream_output(initial_data)
+            return self._stream_output(buf, initial_data)
     
     default._cp_config = {'response.stream': True}
 
@@ -287,6 +294,7 @@ class ProxyRunner(threading.Thread):
     def __init__(self, session, audio_buffer):
         threading.Thread.__init__(self)
         cherrypy.tree.mount(Root(session, audio_buffer), "/")
+        
     
     def run(self):
         cherrypy.engine.start()
