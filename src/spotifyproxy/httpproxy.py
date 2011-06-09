@@ -293,6 +293,9 @@ class Root:
 class ProxyRunner(threading.Thread):
     def __init__(self, session, audio_buffer):
         threading.Thread.__init__(self)
+        cherrypy.config.update({
+            'engine.autoreload_on': False,
+        })
         cherrypy.tree.mount(Root(session, audio_buffer), "/")
         
     
