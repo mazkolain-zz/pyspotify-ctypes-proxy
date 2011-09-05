@@ -3,14 +3,12 @@ Created on 06/05/2011
 
 @author: mikel
 '''
-import threading
 
 #Why the hell "import spotify" does not work?
 from spotify import image as _image, BulkConditionChecker, link, session, SampleType
+import threading, time, StringIO, cherrypy, re, struct
+from spotify.utils.audio import BufferUnderrunError
 
-import cherrypy
-
-import re
 
 
 class ImageCallbacks(_image.ImageCallbacks):
@@ -107,8 +105,7 @@ class Track:
             return track
     
     
-    def _write_wave_header(self, numsamples, channels, samplerate, bitspersample, initial_data):
-        import StringIO, struct
+    def _write_wave_header(self, numsamples, channels, samplerate, bitspersample):
         file = StringIO.StringIO()
         
         #Generate format chunk
@@ -159,7 +156,6 @@ class Track:
         file.write(main_header)
         file.write(format_chunk)
         file.write(data_chunk)
-        file.write(initial_data)
         
         return file.getvalue(), all_cunks_size + 8
     
@@ -172,18 +168,15 @@ class Track:
             return -1
     
     
-    def _write_file_header(self, buf, track):
-        import time
+    def _generate_file_header(self, buf, track):
+        has_frames = True
         
-        while buf.is_playing():
-            frame = buf.next_frame()
-            if frame is None:
-                #Wait until there's at least one available
-                time.sleep(0.1)
-            
-            else:
+        while has_frames:
+            try:
+                frame, has_frames = buf.get_frame(0)
+                
                 #Current sample duration (ms)
-                framelen_ms = frame.num_samples * 1.0 / (frame.sample_rate / 1000)
+                framelen_ms = frame.frame_time * 1000
                 
                 #Calculate number of samples
                 num_samples = track.duration() * frame.num_samples / framelen_ms
@@ -191,42 +184,46 @@ class Track:
                 #Build the whole header
                 return self._write_wave_header(
                     num_samples, frame.num_channels, frame.sample_rate,
-                    self._get_sample_width(frame.sample_type), frame.data
+                    self._get_sample_width(frame.sample_type)
                 )
-    
-    
-    def _write_frames(self, buf):
-        import StringIO, time
-        
-        counter = 0
-        file = StringIO.StringIO()
-        
-        while counter < 10 and buf.is_playing():
-            frame = buf.next_frame()
-            if frame is not None:
-                file.write(frame.data)
-                counter += 1
-            else:
-                #A little bit of punishment
+            
+            #Wait a bit if we are ahead of the buffer
+            except BufferUnderrunError:
                 time.sleep(0.1)
-        
-        return file.getvalue()
     
     
-    def _stream_output(self, buf, initial_data):
-        yield initial_data
+    def _write_frame_group(self, buf, start_frame_id):
+        pass
+    
+    
+    def _write_file_content(self, buf, wave_header):
+        #Write wave header
+        yield wave_header
         
-        buf.play()
+        buf.start()
+        has_frames = True
+        frame_num = 0
         
-        #Write the actual content
-        while buf.is_playing():
-            yield self._write_frames(buf)
-        
-        if buf.is_canceled():
-            raise cherrypy.HTTPError(500)
-        
-        #Inform libspotify
-        #self.__session.player_unload()
+        #Loop while buffer tells to do so
+        while has_frames:
+            counter = 0
+            file = StringIO.StringIO()
+                
+            #Write 10 frames at a time ~88k
+            #TODO: Should check written size, instead of a fixed frame num?
+            while counter < 10 and has_frames:
+                try:
+                    frame_data, has_frames = buf.get_frame(frame_num)
+                    file.write(frame_data.data)
+                    counter += 1
+                    frame_num += 1
+                    
+                #We've gone ahead of the buffer, let's wait
+                except BufferUnderrunError:
+                    time.sleep(0.1)
+            
+            #Write the generated frame group
+            yield file.getvalue()
     
     
     def _check_headers(self):
@@ -243,7 +240,7 @@ class Track:
         return method
     
     
-    def _write_headers(self, filesize):
+    def _write_http_headers(self, filesize):
         cherrypy.response.headers['Content-Type'] = 'audio/x-wav'
         cherrypy.response.headers['Content-Length'] = filesize
         cherrypy.response.headers['Accept-Ranges'] = 'none'
@@ -260,17 +257,14 @@ class Track:
         #Open the buffer
         buf = self.__audio_buffer.open(self.__session, track)
         
-        #Load track audio...
-        #these should go to somewhere like _populate_buffer
-        #self.__audio_buffer.clear()
+        #Calculate file size, and write headers (http and file)
+        wave_header, filesize = self._generate_file_header(buf, track)
+        self._write_http_headers(filesize)
         
-        #Calculate file size, and tell it
-        initial_data, filesize = self._write_file_header(buf, track)
-        self._write_headers(filesize)
-        
-        #If method was get, stream the actual content
+        #Serve file contents if method was GET
         if method == 'GET':
-            return self._stream_output(buf, initial_data)
+            return self._write_file_content(buf, wave_header)
+            
     
     default._cp_config = {'response.stream': True}
 
@@ -295,6 +289,7 @@ class ProxyRunner(threading.Thread):
         threading.Thread.__init__(self)
         cherrypy.config.update({
             'engine.autoreload_on': False,
+            
         })
         cherrypy.tree.mount(Root(session, audio_buffer), "/")
         
