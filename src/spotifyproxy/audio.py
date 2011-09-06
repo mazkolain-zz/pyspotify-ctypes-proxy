@@ -251,8 +251,12 @@ class AudioBuffer(AbstractBuffer):
     
     
     def get_frame(self, frame_num):
+        #Raise error if buffer was stopped
+        if self.__playback_stopped:
+            raise BufferStoppedError()
+        
         #What happens if this frame is not on the index?
-        if frame_num not in self.__frames:
+        elif frame_num not in self.__frames:
             #If it's ahead of the buffer it's an underrun
             if frame_num > self.get_last_frame_in_buffer():
                 self.__stutter += 1
@@ -261,10 +265,6 @@ class AudioBuffer(AbstractBuffer):
             #Otherwise this thread comes late (has been consumed by others)
             else:
                 raise BufferError("Frame number #%d gone, too late my friend." % frame_num)
-        
-        #Return nothing if the buffer was stopped
-        elif self.__playback_stopped:
-            raise BufferStoppedError()
         
         #Let's serve the frame
         else:
@@ -282,8 +282,7 @@ class AudioBuffer(AbstractBuffer):
     
     
     def stop(self):
-        #FIXME: The following one commented out, as it causes slow startup speeds
-        #self.__session.player_unload()
+        self.__session.player_unload()
         self.__playback_stopped = True
     
     
