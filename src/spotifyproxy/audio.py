@@ -3,6 +3,7 @@ Created on 12/05/2011
 
 @author: mikel
 '''
+from spotify import link, BulkConditionChecker, session
 from collections import deque
 
 
@@ -15,6 +16,11 @@ class BufferError(IOError):
 
 #Risen when stutter is detected
 class BufferUnderrunError(BufferError):
+    pass
+
+
+
+class BufferInitializationError(BufferError):
     pass
 
 
@@ -41,6 +47,19 @@ class AbstractBuffer:
 class QueueItem:
     def __init__(self, **args):
             self.__dict__.update(args)
+
+
+
+class TrackLoadCallback(session.SessionCallbacks):
+    __checker = None
+    
+    
+    def __init__(self, checker):
+        self.__checker = checker
+    
+    
+    def metadata_updated(self, session):
+        self.__checker.check_conditions()
 
 
 
@@ -75,8 +94,37 @@ class AudioBuffer(AbstractBuffer):
     #Frame flagged as the last one
     __end_frame = None
     
+    #Currently playing track id
+    __track_id = None
     
-    def __init__(self, session, track, max_buffer_length = 10):
+    #Currently playing track object
+    __track = None
+    
+    
+    def _load_track(self, track_id):
+        full_id = "spotify:track:%s" % track_id
+        track = link.create_from_string(full_id).as_track()
+        
+        #Set callbacks for loading the track
+        checker = BulkConditionChecker()
+        checker.add_condition(track.is_loaded)
+        callbacks = TrackLoadCallback(checker)
+        self.__session.add_callbacks(callbacks)
+        
+        #Wait until it's done (should be enough)
+        checker.complete_wait(15)
+        
+        #Remove that callback, or will be around forever
+        self.__session.remove_callbacks(callbacks)
+        
+        #Fail if after the wait it's still unusable
+        if not track.is_loaded():
+            raise BufferInitializationError("Failed loading track %s" % track_id)
+        else:
+            return track
+    
+    
+    def __init__(self, session, track_id, max_buffer_length = 10):
         self.__frames = deque()
         self.__frame_data = {}
         self.__stutter = 0
@@ -87,7 +135,11 @@ class AudioBuffer(AbstractBuffer):
         self.__session = session
         self.__last_frame = -1
         self.__end_frame = -1
-        self.__session.player_load(track)
+        
+        #Load the track
+        self.__track_id = track_id
+        self.__track = self._load_track(track_id)
+        self.__session.player_load(self.__track)
     
     
     def start(self):
@@ -152,6 +204,14 @@ class AudioBuffer(AbstractBuffer):
             #Previous tests passed. Frame will fit
             else:
                 return True
+    
+    
+    def get_first_frame_in_buffer(self):
+        if len(self.__frames) > 0:
+            return self.__frames[0]
+        
+        else:
+            return -1
     
     
     def get_last_frame_in_buffer(self):
@@ -222,11 +282,21 @@ class AudioBuffer(AbstractBuffer):
     
     
     def stop(self):
+        #FIXME: The following one commented out, as it causes slow startup speeds
+        #self.__session.player_unload()
         self.__playback_stopped = True
     
     
     def is_stopped(self):
         return self.__playback_stopped
+    
+    
+    def get_track_id(self):
+        return self.__track_id
+    
+    
+    def get_track(self):
+        return self.__track
 
 
 
@@ -234,12 +304,33 @@ class BufferManager(AbstractBuffer):
     __current_buffer = None
     
     
-    def open(self, session, track):
-        if self.__current_buffer is not None:
-            self.__current_buffer.stop()
-        
-        self.__current_buffer = AudioBuffer(session, track)
-        
+    def _can_share_buffer(self, track_id):
+        """
+        Check if the requested track and the current one are the same.
+        If true, check if the buffer is still on the start position, so
+        this thread can catch up it.
+        The result is a shared buffer between threads.
+        """
+        return(
+            self.__current_buffer is not None and
+            track_id == self.__current_buffer.get_track_id() and
+            self.__current_buffer.get_first_frame_in_buffer() == 0
+        )
+    
+    
+    def open(self, session, track_id):
+        #If we can't share this buffer start a new one
+        if not self._can_share_buffer(track_id):
+            #Stop current buffer if any
+            if self.__current_buffer is not None:
+                self.__current_buffer.stop()
+            
+            #Create the new buffer
+            self.__current_buffer = AudioBuffer(session, track_id)
+            
+            #And start receiving data
+            self.__current_buffer.start()
+            
         return self.__current_buffer
     
     
