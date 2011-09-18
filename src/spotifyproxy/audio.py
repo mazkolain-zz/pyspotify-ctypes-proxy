@@ -45,8 +45,20 @@ class AbstractBuffer:
 
 
 class QueueItem:
-    def __init__(self, **args):
-            self.__dict__.update(args)
+    data = None
+    num_samples = None
+    sample_type = None
+    sample_rate = None
+    num_channels = None
+    frame_time = None
+    
+    def __init__(self, data, num_samples, sample_type, sample_rate, num_channels, frame_time):
+        self.data = data
+        self.num_samples = num_samples
+        self.sample_type = sample_type
+        self.sample_rate = sample_rate
+        self.num_channels = num_channels
+        self.frame_time = frame_time
 
 
 
@@ -166,12 +178,12 @@ class AudioBuffer(AbstractBuffer):
         
         #Save the data
         self.__frame_data[frame_id] = QueueItem(
-            data=data,
-            num_samples=num_samples,
-            sample_type=sample_type,
-            sample_rate=sample_rate,
-            num_channels=num_channels,
-            frame_time=frame_time,
+            data,
+            num_samples,
+            sample_type,
+            sample_rate,
+            num_channels,
+            frame_time,
         )
         
         #Update the buffer time
