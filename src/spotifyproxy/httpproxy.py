@@ -33,9 +33,22 @@ class Image:
         self.__session = session
     
     
+    def _get_clean_image_id(self, image_str):
+        #Strip the optional extension...
+        r = re.compile('\.jpg$', re.IGNORECASE)
+        return re.sub(r, '', image_str)
+    
+    
     @cherrypy.expose
     def default(self, image_id):
-        img = _image.create(self.__session, image_id)
+        method = cherrypy.request.method.upper()
+        
+        #Fail for other methods than get or head
+        if method not in ("GET", "HEAD"):
+            raise cherrypy.HTTPError(405)
+        
+        clean_image_id = self._get_clean_image_id(image_id)
+        img = _image.create(self.__session, clean_image_id)
         checker = BulkConditionChecker()
         checker.add_condition(img.is_loaded)
         img_cb = ImageCallbacks(checker)
@@ -50,7 +63,10 @@ class Image:
         
         else:
             cherrypy.response.headers["Content-Type"] = "image/jpeg"
-            return img.data()
+            cherrypy.response.headers["Content-Length"] = len(img.data())
+            
+            if method == 'GET':
+                return img.data()
 
 
 
