@@ -9,6 +9,7 @@ from spotify import image as _image, BulkConditionChecker, link, session, Sample
 import threading, time, StringIO, cherrypy, re, struct
 from spotify.utils.audio import BufferUnderrunError
 from cherrypy import wsgiserver
+import weakref
 
 
 
@@ -273,7 +274,8 @@ class ProxyRunner(threading.Thread):
     
     
     def __init__(self, session, audio_buffer):
-        app = cherrypy.tree.mount(Root(session, audio_buffer), '/')
+        sess_ref = weakref.proxy(session)
+        app = cherrypy.tree.mount(Root(sess_ref, audio_buffer), '/')
         self.__server = wsgiserver.CherryPyWSGIServer(('0.0.0.0', 8080), app)
         threading.Thread.__init__(self)
         
