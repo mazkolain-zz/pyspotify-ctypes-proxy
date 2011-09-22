@@ -294,8 +294,9 @@ class AudioBuffer(AbstractBuffer):
     
     
     def stop(self):
-        self.__session.player_unload()
-        self.__playback_stopped = True
+        if not self.__playback_stopped:
+            self.__session.player_unload()
+            self.__playback_stopped = True
     
     
     def is_stopped(self):
@@ -346,15 +347,24 @@ class BufferManager(AbstractBuffer):
     
     
     def music_delivery(self, data, num_samples, sample_type, sample_rate, num_channels):
-        return  self.__current_buffer.music_delivery(
-            data, num_samples, sample_type, sample_rate, num_channels
-        )
+        if self.__current_buffer is not None:
+            return  self.__current_buffer.music_delivery(
+                data, num_samples, sample_type, sample_rate, num_channels
+            )
+        else:
+            return 0
     
     
     def get_stats(self):
-        return self.__current_buffer.get_stats()
+        if self.__current_buffer is not None:
+            return self.__current_buffer.get_stats()
     
     
     def set_track_ended(self):
-        self.__current_buffer.set_track_ended()
-
+        if self.__current_buffer is not None:
+            self.__current_buffer.set_track_ended()
+    
+    
+    def stop(self):
+        if self.__current_buffer is not None:
+            self.__current_buffer.stop()

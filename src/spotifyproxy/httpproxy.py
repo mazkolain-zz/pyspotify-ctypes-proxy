@@ -271,9 +271,11 @@ class Root:
 
 class ProxyRunner(threading.Thread):
     __server = None
+    __audio_buffer = None
     
     
     def __init__(self, session, audio_buffer):
+        self.__audio_buffer = audio_buffer
         sess_ref = weakref.proxy(session)
         app = cherrypy.tree.mount(Root(sess_ref, audio_buffer), '/')
         self.__server = wsgiserver.CherryPyWSGIServer(('0.0.0.0', 8080), app)
@@ -285,4 +287,5 @@ class ProxyRunner(threading.Thread):
     
     
     def stop(self):
+        self.__audio_buffer.stop()
         self.__server.stop()
