@@ -7,7 +7,7 @@ Created on 06/05/2011
 #Why the hell "import spotify" does not work?
 from spotify import image as _image, BulkConditionChecker, link, session, SampleType
 import threading, time, StringIO, cherrypy, re, struct
-from spotify.utils.audio import BufferUnderrunError
+from audio import BufferUnderrunError
 from cherrypy import wsgiserver
 import weakref
 
