@@ -11,3 +11,9 @@ syntax: glob
 libs/*
 syntax: glob
 tmp/*
+syntax: regexp
+^build$
+syntax: regexp
+^dist$
+syntax: glob
+*.egg-info
