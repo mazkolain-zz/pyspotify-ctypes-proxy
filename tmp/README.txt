@@ -1,0 +1,1 @@
+Here goes the libspotify cache and settings folder.

@@ -1,0 +1,13 @@
+
+syntax: regexp
+^test/appkey\.py$
+syntax: regexp
+^\.project$
+syntax: regexp
+^\.pydevproject$
+syntax: glob
+dlls/*
+syntax: glob
+libs/*
+syntax: glob
+tmp/*
