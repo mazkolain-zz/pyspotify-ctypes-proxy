@@ -10,6 +10,26 @@ import threading, time, StringIO, cherrypy, re, struct
 from audio import BufferUnderrunError
 from cherrypy import wsgiserver
 import weakref
+from datetime import datetime
+
+
+
+def format_http_date(dt):
+    """
+    As seen on SO, compatible with py2.4+:
+    http://stackoverflow.com/questions/225086/rfc-1123-date-representation-in-python
+    """
+    """Return a string representation of a date according to RFC 1123
+    (HTTP/1.1).
+
+    The supplied date must be in UTC.
+
+    """
+    weekday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][dt.weekday()]
+    month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
+             "Oct", "Nov", "Dec"][dt.month - 1]
+    return "%s, %02d %s %04d %02d:%02d:%02d GMT" % (weekday, dt.day, month,
+        dt.year, dt.hour, dt.minute, dt.second)
 
 
 
@@ -28,10 +48,12 @@ class ImageCallbacks(_image.ImageCallbacks):
 
 class Image:
     __session = None
+    __last_modified = None
     
     
     def __init__(self, session):
         self.__session = session
+        self.__last_modified = format_http_date(datetime.utcnow())
     
     
     def _get_clean_image_id(self, image_str):
@@ -63,8 +85,12 @@ class Image:
             raise cherrypy.HTTPError(500)
         
         else:
+            print cherrypy.request.headers
+            print self.__last_modified
+            
             cherrypy.response.headers["Content-Type"] = "image/jpeg"
             cherrypy.response.headers["Content-Length"] = len(img.data())
+            cherrypy.response.headers["Last-Modified"] = self.__last_modified
             
             if method == 'GET':
                 return img.data()
