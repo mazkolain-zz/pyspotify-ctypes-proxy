@@ -9,8 +9,14 @@ from spotify import image as _image, BulkConditionChecker, link, session, Sample
 import threading, time, StringIO, cherrypy, re, struct
 from audio import BufferUnderrunError
 from cherrypy import wsgiserver
+from cherrypy.process import servers
 import weakref
 from datetime import datetime
+
+
+
+class HTTPProxyError(Exception):
+    pass
 
 
 
@@ -300,16 +306,34 @@ class ProxyRunner(threading.Thread):
     __audio_buffer = None
     
     
-    def __init__(self, session, audio_buffer):
+    def _find_free_port(self, host, port_list):
+        for port in port_list:
+            try:
+                servers.check_port(host, port, .1)
+                return port
+            except:
+                pass
+        
+        list_str = ','.join([str(item) for item in port_list])
+        raise HTTPProxyError("Cannot find an open port. Tried: %s" % list_str)
+    
+    
+    def __init__(self, session, audio_buffer, host='localhost', try_ports=range(8080,8090)):
+        port = self._find_free_port(host, try_ports)
         self.__audio_buffer = audio_buffer
         sess_ref = weakref.proxy(session)
         app = cherrypy.tree.mount(Root(sess_ref, audio_buffer), '/')
-        self.__server = wsgiserver.CherryPyWSGIServer(('0.0.0.0', 8080), app)
+        self.__server = wsgiserver.CherryPyWSGIServer((host, port), app)
         threading.Thread.__init__(self)
         
     
     def run(self):
         self.__server.start()
+    
+    
+    def get_address(self):
+        host, port = self.__server.bind_addr
+        return "%s:%d" % (host, port)
     
     
     def stop(self):
