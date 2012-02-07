@@ -393,7 +393,7 @@ class ProxyRunner(threading.Thread):
                 pass
         
         list_str = ','.join([str(item) for item in port_list])
-        raise HTTPProxyError("Cannot find an open port. Tried: %s" % list_str)
+        raise HTTPProxyError("Cannot find a free port. Tried: %s" % list_str)
     
     
     def __init__(self, session, audio_buffer, host='localhost', try_ports=range(8080,8090)):
