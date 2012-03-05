@@ -1,0 +1,7 @@
+dlls/*.dll
+libs/*
+.project
+.pydevproject
+build
+dist
+src/PyspotifyCtypesProxy.egg-info
