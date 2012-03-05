@@ -134,7 +134,7 @@ class Image:
     
     
     @cherrypy.expose
-    def default(self, image_id):
+    def default(self, image_id, **kwargs):
         method = cherrypy.request.method.upper()
         
         #Fail for other methods than get or head
@@ -340,7 +340,7 @@ class Track:
     
     
     @cherrypy.expose
-    def default(self, track_str):
+    def default(self, track_str, **kwargs):
         method = self._check_request()
         
         #Ensure that the track object is loaded
