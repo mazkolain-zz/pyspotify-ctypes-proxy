@@ -180,6 +180,11 @@ class Track:
     
     
     def _get_clean_track_id(self, track_str):
+        #Fail if it's not a valid track id
+        r  = re.compile('[a-z0-9]{22}(\.wav)?$', re.IGNORECASE)
+        if r.match(track_str) is None:
+            raise cherrypy.HTTPError(404)
+        
         #Strip the optional extension...
         r = re.compile('\.wav$', re.IGNORECASE)
         return re.sub(r, '', track_str)
