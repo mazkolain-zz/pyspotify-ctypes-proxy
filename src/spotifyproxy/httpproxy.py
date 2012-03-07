@@ -59,18 +59,6 @@ def create_user_token(base_token, user_agent):
 
 
 
-def get_my_token(proxy_address, user_agent=None):
-    header_data = {}
-    if user_agent is not None:
-        header_data['User-Agent'] = user_agent
-    
-    url = 'http://%s/token' % proxy_address
-    req = urllib2.Request(url, headers=header_data)
-    
-    return urllib2.urlopen(req).read()
-
-
-
 def sha1sum(data):
     #SHA1 lib 2.4 compatibility
     try:
@@ -95,25 +83,6 @@ class ImageCallbacks(_image.ImageCallbacks):
     
     def image_loaded(self, image):
         self.__checker.check_conditions()
-
-
-
-class Token:
-    __base_token = None
-    
-    
-    def __init__(self, base_token):
-        self.__base_token = base_token
-    
-    
-    @cherrypy.expose
-    def default(self):
-        if 'User-Agent' in cherrypy.request.headers:
-            ua = cherrypy.request.headers['User-Agent']
-        else:
-            ua = None
-        
-        return create_user_token(self.__base_token, ua)
 
 
 
@@ -379,7 +348,6 @@ class Root:
         self.__session = session
         self.image = Image(session)
         self.track = Track(session, audio_buffer, base_token)
-        self.token = Token(base_token)
 
 
 
@@ -417,6 +385,10 @@ class ProxyRunner(threading.Thread):
     
     def get_port(self):
         return self.__server.bind_addr[1]
+    
+    
+    def get_user_token(self, user_agent):
+        return create_user_token(self.__base_token, user_agent)
     
     
     def ready_wait(self):
