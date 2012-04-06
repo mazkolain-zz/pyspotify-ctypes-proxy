@@ -269,14 +269,14 @@ class AudioBuffer(AbstractBuffer):
         
         #What happens if this frame is not on the index?
         elif frame_num not in self.__frames:
-            #If it's ahead of the buffer it's an underrun
-            if frame_num > self.get_last_frame_in_buffer():
+            #Frame is no longer available
+            if frame_num < self.get_first_frame_in_buffer():
+                raise BufferError("Frame number #%d gone, too late my friend." % frame_num)
+            
+            #If it's ahead of the buffer, it's an underrun
+            else:
                 self.__stutter += 1
                 raise BufferUnderrunError("Frame #%d not yet available." % frame_num)
-            
-            #Otherwise this thread comes late (has been consumed by others)
-            else:
-                raise BufferError("Frame number #%d gone, too late my friend." % frame_num)
         
         #Let's serve the frame
         else:
