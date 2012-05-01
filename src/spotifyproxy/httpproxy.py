@@ -399,3 +399,4 @@ class ProxyRunner(threading.Thread):
     def stop(self):
         self.__audio_buffer.stop()
         self.__server.stop()
+        self.join(10)
