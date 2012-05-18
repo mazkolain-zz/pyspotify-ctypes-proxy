@@ -314,6 +314,11 @@ class AudioBuffer(AbstractBuffer):
 
 class BufferManager(AbstractBuffer):
     __current_buffer = None
+    __buffer_size = None
+    
+    
+    def __init__(self, buffer_size = 10):
+        self.__buffer_size = buffer_size
     
     
     def _can_share_buffer(self, track_id):
@@ -338,7 +343,9 @@ class BufferManager(AbstractBuffer):
                 self.__current_buffer.stop()
             
             #Create the new buffer
-            self.__current_buffer = AudioBuffer(session, track_id)
+            self.__current_buffer = AudioBuffer(
+                session, track_id, self.__buffer_size
+            )
             
             #And start receiving data
             self.__current_buffer.start()
