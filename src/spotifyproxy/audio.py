@@ -186,8 +186,9 @@ class AudioBuffer(AbstractBuffer):
             frame_time,
         )
         
-        #Update the buffer time
+        #Update the buffer
         self.__buffer_length += frame_time
+        
         
         #Update the sample count
         self.__samples_in_buffer += num_samples
@@ -203,19 +204,15 @@ class AudioBuffer(AbstractBuffer):
         return frame_time + self.__buffer_length > self.__max_buffer_length
     
     
-    def _purge_frames(self, frame_time):
+    def _purge_frames(self):
         while len(self.__frames) > 0:
-            #Return if this frame cannot be deleted
+            #Break if reached to an undeletable frame
             if self.__frames[0] == self.__last_frame:
-                return False
+                break
             
-            #It can be deleted, so let's do it
-            elif self._will_fill_buffer(frame_time):
-                self._remove_first_frame()
-            
-            #Previous tests passed. Frame will fit
+            #Delete the first one
             else:
-                return True
+                self._remove_first_frame()
     
     
     def get_first_frame_in_buffer(self):
@@ -238,9 +235,9 @@ class AudioBuffer(AbstractBuffer):
         #Calculate the length of this delivery in seconds
         frame_time = 1.0 * num_samples / sample_rate
         
-        #Check if buffer is full, and purge if necessary
-        if self._will_fill_buffer(frame_time) and not self._purge_frames(frame_time):
-            #Tell that no frames where consumed
+        #If buffer is full, purge and return
+        if self._will_fill_buffer(frame_time):
+            self._purge_frames()
             return 0
         
         #Else append the data
