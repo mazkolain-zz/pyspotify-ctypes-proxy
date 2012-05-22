@@ -223,14 +223,8 @@ class Track:
     
     
     def _generate_file_header(self, buf):
+        num_samples = buf.get_calc_total_samples()
         frame, has_frames = buf.get_frame_wait(0)
-        track = buf.get_track()
-        
-        #Current sample duration (ms)
-        framelen_ms = frame.frame_time * 1000
-        
-        #Calculate number of samples
-        num_samples = track.duration() * frame.num_samples / framelen_ms
         
         #Build the whole header
         return self._write_wave_header(

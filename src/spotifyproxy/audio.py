@@ -101,6 +101,9 @@ class AudioBuffer(AbstractBuffer):
     #Total samples delivered by libspotify
     __total_samples = None
     
+    #Estimated number of total samples in track
+    __calc_total_samples = None
+    
     #Session instance
     __session = None
     
@@ -160,7 +163,16 @@ class AudioBuffer(AbstractBuffer):
     
     
     def start(self):
+        #Start receiving data
         self.__session.player_play(True)
+        
+        #Now that we may have data, calculate number of samples
+        frame, has_frames = self.get_frame_wait(0)
+        track = self.get_track()
+        framelen_ms = frame.frame_time * 1000
+        self.__calc_total_samples = (
+            track.duration() * frame.num_samples / framelen_ms
+        )
     
     
     def _remove_first_frame(self):
@@ -263,6 +275,10 @@ class AudioBuffer(AbstractBuffer):
     
     def get_total_samples(self):
         return self.__total_samples
+    
+    
+    def get_calc_total_samples(self):
+        return self.__calc_total_samples
     
     
     def set_track_ended(self):
