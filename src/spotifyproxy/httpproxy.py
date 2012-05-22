@@ -223,28 +223,20 @@ class Track:
     
     
     def _generate_file_header(self, buf):
-        has_frames = True
+        frame, has_frames = buf.get_frame_wait(0)
+        track = buf.get_track()
         
-        while has_frames:
-            try:
-                frame, has_frames = buf.get_frame(0)
-                track = buf.get_track()
-                
-                #Current sample duration (ms)
-                framelen_ms = frame.frame_time * 1000
-                
-                #Calculate number of samples
-                num_samples = track.duration() * frame.num_samples / framelen_ms
-                
-                #Build the whole header
-                return self._write_wave_header(
-                    num_samples, frame.num_channels, frame.sample_rate,
-                    self._get_sample_width(frame.sample_type)
-                )
-            
-            #Wait a bit if we are ahead of the buffer
-            except BufferUnderrunError:
-                time.sleep(0.1)
+        #Current sample duration (ms)
+        framelen_ms = frame.frame_time * 1000
+        
+        #Calculate number of samples
+        num_samples = track.duration() * frame.num_samples / framelen_ms
+        
+        #Build the whole header
+        return self._write_wave_header(
+            num_samples, frame.num_channels, frame.sample_rate,
+            self._get_sample_width(frame.sample_type)
+        )
     
     
     def _write_frame_group(self, buf, start_frame_id):
@@ -266,15 +258,10 @@ class Track:
             #Write 10 frames at a time ~88k
             #TODO: Should check written size, instead of a fixed frame num?
             while counter < 10 and has_frames:
-                try:
-                    frame_data, has_frames = buf.get_frame(frame_num)
-                    file.write(frame_data.data)
-                    counter += 1
-                    frame_num += 1
-                    
-                #We've gone ahead of the buffer, let's wait
-                except BufferUnderrunError:
-                    time.sleep(0.1)
+                frame_data, has_frames = buf.get_frame_wait(frame_num)
+                file.write(frame_data.data)
+                counter += 1
+                frame_num += 1
             
             #Write the generated frame group
             yield file.getvalue()

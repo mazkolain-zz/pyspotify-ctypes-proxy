@@ -3,6 +3,7 @@ Created on 12/05/2011
 
 @author: mikel
 '''
+import time
 from spotify import link, BulkConditionChecker, session
 from collections import deque
 
@@ -297,6 +298,18 @@ class AudioBuffer(AbstractBuffer):
             #print "frame_num(%d) != end_frame(%d): %d" % (frame_num, self.__end_frame, has_frames)
             
             return self.__frame_data[frame_num], has_frames
+    
+    
+    def get_frame_wait(self, frame_num):
+        has_frames = True
+        
+        while has_frames:
+            try:
+                return self.get_frame(frame_num)
+            
+            #Wait a bit if we are ahead of the buffer
+            except BufferUnderrunError:
+                time.sleep(0.1)
     
     
     def stop(self):
