@@ -97,6 +97,9 @@ class AudioBuffer(AbstractBuffer):
     #Number of samples in buffer (not used but required by libspotify)
     __samples_in_buffer = None
     
+    #Total samples delivered by libspotify
+    __total_samples = None
+    
     #Session instance
     __session = None
     
@@ -144,6 +147,7 @@ class AudioBuffer(AbstractBuffer):
         self.__max_buffer_length = max_buffer_length
         self.__buffer_length = 0
         self.__samples_in_buffer = 0
+        self.__total_samples = 0
         self.__session = session
         self.__last_frame = -1
         self.__end_frame = -1
@@ -190,8 +194,9 @@ class AudioBuffer(AbstractBuffer):
         self.__buffer_length += frame_time
         
         
-        #Update the sample count
+        #Update the sample counts
         self.__samples_in_buffer += num_samples
+        self.__total_samples += num_samples
         
         #And finally index it on the queue
         self.__frames.append(frame_id)
@@ -253,6 +258,10 @@ class AudioBuffer(AbstractBuffer):
         stutter = self.__stutter
         self.__stutter = 0
         return self.__samples_in_buffer, stutter
+    
+    
+    def get_total_samples(self):
+        return self.__total_samples
     
     
     def set_track_ended(self):
