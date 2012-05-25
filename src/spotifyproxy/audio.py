@@ -170,7 +170,7 @@ class AudioBuffer(AbstractBuffer):
         frame, has_frames = self.get_frame_wait(0)
         track = self.get_track()
         framelen_ms = frame.frame_time * 1000
-        self.__calc_total_samples = (
+        self.__calc_total_samples = int(
             track.duration() * frame.num_samples / framelen_ms
         )
     
