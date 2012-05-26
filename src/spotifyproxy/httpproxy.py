@@ -243,6 +243,8 @@ class Track:
         
         has_frames = True
         frame_num = 0
+        samples_written = 0
+        calc_samples = buf.get_calc_total_samples()
         
         #Loop while buffer tells to do so
         while has_frames:
@@ -252,10 +254,37 @@ class Track:
             #Write 10 frames at a time ~88k
             #TODO: Should check written size, instead of a fixed frame num?
             while counter < 10 and has_frames:
-                frame_data, has_frames = buf.get_frame_wait(frame_num)
-                file.write(frame_data.data)
+                frame, has_frames = buf.get_frame_wait(frame_num)
+                
+                #Check if this frame fits in the estimated size
+                if samples_written + frame.num_samples < calc_samples:
+                    file.write(frame.data)
+                    samples_written += frame.num_samples
+                
+                #We need to truncate the frame data
+                else:
+                    sample_width = self._get_sample_width(frame.sample_type)
+                    sample_size = sample_width / 8 * frame.num_channels
+                    samples_left = calc_samples - samples_written
+                    truncate_size = samples_left * sample_size
+                    file.write(frame.data[:truncate_size])
+                    samples_written += samples_left
+                    has_frames = False
+                
+                #Update counters
                 counter += 1
                 frame_num += 1
+            
+            #It's the last write, check written size
+            if not has_frames:
+                #If estimated size was bigger than real, insert silence
+                if calc_samples > samples_written:
+                    samples_left = calc_samples - samples_written
+                    sample_width = self._get_sample_width(frame.sample_type)
+                    sample_size = sample_width / 8 * frame.num_channels
+                    padding_size = samples_left * sample_size
+                    file.write('\0' * padding_size)
+                    samples_written += samples_left
             
             #Write the generated frame group
             yield file.getvalue()
