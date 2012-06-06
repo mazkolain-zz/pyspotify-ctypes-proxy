@@ -13,6 +13,7 @@ from cherrypy.process import servers
 import weakref
 from datetime import datetime
 import string, random
+from utils import DynamicCallback
 
 #TODO: urllib 3.x compatibility
 import urllib2
@@ -134,6 +135,19 @@ class Image:
 
 
 
+class TrackLoadCallback(session.SessionCallbacks):
+    __checker = None
+    
+    
+    def __init__(self, checker):
+        self.__checker = checker
+    
+    
+    def metadata_updated(self, session):
+        self.__checker.check_conditions()
+
+
+
 class Track:
     __session = None
     __audio_buffer = None
@@ -141,11 +155,12 @@ class Track:
     __base_token = None
     
     
-    def __init__(self, session, audio_buffer, base_token):
+    def __init__(self, session, audio_buffer, base_token, on_stream_ended):
         self.__session = session
         self.__audio_buffer = audio_buffer
         self.__base_token = base_token
         self.__is_playing = False
+        self.__cb_stream_ended = on_stream_ended
     
     
     def _get_clean_track_id(self, track_str):
@@ -286,6 +301,9 @@ class Track:
                     padding_size = samples_left * sample_size
                     file.write('\0' * padding_size)
                     samples_written += samples_left
+                
+                #Notify that the stream ended
+                self.__cb_stream_ended()
             
             #Write the generated frame group
             yield file.getvalue()
@@ -326,16 +344,42 @@ class Track:
             return m.group(1), m.group(2)
     
     
+    def _load_track(self, track_id):
+        full_id = "spotify:track:%s" % track_id
+        track = link.create_from_string(full_id).as_track()
+        
+        #Set callbacks for loading the track
+        checker = BulkConditionChecker()
+        checker.add_condition(track.is_loaded)
+        callbacks = TrackLoadCallback(checker)
+        self.__session.add_callbacks(callbacks)
+        
+        #Wait until it's done (should be enough)
+        checker.complete_wait(15)
+        
+        #Remove that callback, or will be around forever
+        self.__session.remove_callbacks(callbacks)
+        
+        #Fail if after the wait it's still unusable
+        if not track.is_loaded():
+            raise RuntimeError("Failed loading track %s" % track_id)
+        else:
+            return track
+    
+    
     @cherrypy.expose
-    def default(self, track_str, **kwargs):
+    def default(self, track_id, **kwargs):
         #Check sanity of the request
         self._check_request()
         
         #Get the requested clean track
-        track_id = self._get_clean_track_id(track_str)
+        track_id = self._get_clean_track_id(track_id)
+        
+        #And load the track object
+        track = self._load_track(track_id)
         
         #Open the buffer
-        buf = self.__audio_buffer.open(self.__session, track_id)
+        buf = self.__audio_buffer.open(self.__session, track)
         
         #It's a partial request
         if 'Range' in cherrypy.request.headers:
@@ -382,10 +426,10 @@ class Root:
     track = None
     
     
-    def __init__(self, session, audio_buffer, base_token):
+    def __init__(self, session, audio_buffer, base_token, on_stream_ended):
         self.__session = session
         self.image = Image(session)
-        self.track = Track(session, audio_buffer, base_token)
+        self.track = Track(session, audio_buffer, base_token, on_stream_ended)
 
 
 
@@ -393,6 +437,7 @@ class ProxyRunner(threading.Thread):
     __server = None
     __audio_buffer = None
     __base_token = None
+    __cb_stream_ended = None
     
     
     def _find_free_port(self, host, port_list):
@@ -412,9 +457,15 @@ class ProxyRunner(threading.Thread):
         self.__audio_buffer = audio_buffer
         sess_ref = weakref.proxy(session)
         self.__base_token = create_base_token()
-        app = cherrypy.tree.mount(Root(sess_ref, audio_buffer, self.__base_token), '/')
+        self.__cb_stream_ended = DynamicCallback()
+        root = Root(sess_ref, audio_buffer, self.__base_token, self.__cb_stream_ended)
+        app = cherrypy.tree.mount(root, '/')
         self.__server = wsgiserver.CherryPyWSGIServer((host, port), app)
         threading.Thread.__init__(self)
+    
+    
+    def on_stream_ended(self, callback):
+        self.__cb_stream_ended.set_callback(callback)
         
     
     def run(self):
