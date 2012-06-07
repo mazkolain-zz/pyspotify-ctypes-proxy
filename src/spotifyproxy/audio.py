@@ -201,7 +201,7 @@ class AudioBuffer(AbstractBuffer):
                 break
             
             #Break if reached to an undeletable frame
-            if self.__frames[0] == self.__last_frame:
+            elif self.__frames[0] == self.__last_frame:
                 break
             
             #Delete the first one
@@ -278,6 +278,7 @@ class AudioBuffer(AbstractBuffer):
         elif frame_num not in self.__frames:
             #Frame is no longer available
             if frame_num < self.get_first_frame_in_buffer():
+                print 'served: %f' % self.__served_time
                 raise BufferError("Frame number #%d gone, too late my friend." % frame_num)
             
             #If it's ahead of the buffer, it's an underrun
@@ -290,12 +291,13 @@ class AudioBuffer(AbstractBuffer):
             #Get requested frame
             frame = self.__frame_data[frame_num]
             
-            #Update some counters
-            self._update_served_time(frame)
-            
-            #Store it (if higher) to prevent purge beyond this one
+            #If requested frame is higher than the last requested
             if self.__last_frame < frame_num:
+                #Set if as the last requested one
                 self.__last_frame = frame_num
+                
+                #Update some counters
+                self._update_served_time(frame)
             
             #Flag to indicate if there are frames left
             has_frames = frame_num != self.__end_frame
