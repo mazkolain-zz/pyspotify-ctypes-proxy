@@ -464,8 +464,12 @@ class ProxyRunner(threading.Thread):
         threading.Thread.__init__(self)
     
     
-    def on_stream_ended(self, callback):
+    def set_stream_end_callback(self, callback):
         self.__cb_stream_ended.set_callback(callback)
+    
+    
+    def clear_stream_end_callback(self):
+        self.__cb_stream_ended.clear_callback();
         
     
     def run(self):
