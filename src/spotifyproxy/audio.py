@@ -6,6 +6,7 @@ Created on 12/05/2011
 import time
 from spotify import link, BulkConditionChecker, session
 from collections import deque
+import threading
 
 
 
@@ -64,6 +65,8 @@ class QueueItem:
 
 
 class AudioBuffer(AbstractBuffer):
+    #OMG! It's full of vars!
+    
     #Queue that holds the in-memory framen numbers
     __frames = None
     
@@ -81,6 +84,9 @@ class AudioBuffer(AbstractBuffer):
     
     #Current buffer length in seconds
     __buffer_length = None
+    
+    #Total served time
+    __served_time = None
     
     #Number of samples in buffer (not used but required by libspotify)
     __samples_in_buffer = None
@@ -103,6 +109,10 @@ class AudioBuffer(AbstractBuffer):
     #Currently playing track object
     __track = None
     
+    #Buffer pos update locl
+    __served_time_lock = None
+    
+    
     
     def __init__(self, session, track, max_buffer_length = 10):
         self.__frames = deque()
@@ -116,6 +126,8 @@ class AudioBuffer(AbstractBuffer):
         self.__session = session
         self.__last_frame = -1
         self.__end_frame = -1
+        self.__served_time = 0
+        self.__served_time_lock = threading.Lock()
         
         #Load the track
         self.__track = track
@@ -184,6 +196,10 @@ class AudioBuffer(AbstractBuffer):
     
     def _purge_frames(self):
         while len(self.__frames) > 0:
+            #Never purge frames if we served less than 10s from the start
+            if self.__served_time < 10:
+                break
+            
             #Break if reached to an undeletable frame
             if self.__frames[0] == self.__last_frame:
                 break
@@ -245,6 +261,14 @@ class AudioBuffer(AbstractBuffer):
         self.__end_frame = self.get_last_frame_in_buffer()
     
     
+    def _update_served_time(self, frame):
+        self.__served_time_lock.acquire()
+        try:
+            self.__served_time += frame.frame_time
+        finally:
+            self.__served_time_lock.release()
+    
+    
     def get_frame(self, frame_num):
         #Raise error if buffer was stopped
         if self.__playback_stopped:
@@ -263,17 +287,20 @@ class AudioBuffer(AbstractBuffer):
         
         #Let's serve the frame
         else:
-            #Flag to indicate if there are frames left
-            has_frames = frame_num != self.__end_frame
+            #Get requested frame
+            frame = self.__frame_data[frame_num]
+            
+            #Update some counters
+            self._update_served_time(frame)
             
             #Store it (if higher) to prevent purge beyond this one
             if self.__last_frame < frame_num:
                 self.__last_frame = frame_num
             
-            #print "get frame #%d" % frame_num
-            #print "frame_num(%d) != end_frame(%d): %d" % (frame_num, self.__end_frame, has_frames)
+            #Flag to indicate if there are frames left
+            has_frames = frame_num != self.__end_frame
             
-            return self.__frame_data[frame_num], has_frames
+            return frame, has_frames
     
     
     def get_frame_wait(self, frame_num):
