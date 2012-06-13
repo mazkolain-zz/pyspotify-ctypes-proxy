@@ -7,7 +7,7 @@ Created on 06/05/2011
 #Why the hell "import spotify" does not work?
 from spotify import image as _image, BulkConditionChecker, link, session, SampleType
 import threading, time, StringIO, cherrypy, re, struct
-from audio import BufferUnderrunError
+from audio import QueueItem
 from cherrypy import wsgiserver
 from cherrypy.process import servers
 import weakref
@@ -237,10 +237,11 @@ class Track:
             return -1
     
     
-    def _generate_file_header(self, buf):
-        num_samples = buf.get_calc_total_samples()
-        frame, has_frames = buf.get_frame_wait(0)
-        
+    def _get_total_samples(self, frame, track):
+        return frame.sample_rate * track.duration() / 1000
+    
+    
+    def _generate_file_header(self, frame, num_samples):
         #Build the whole header
         return self._write_wave_header(
             num_samples, frame.num_channels, frame.sample_rate,
@@ -248,11 +249,7 @@ class Track:
         )
     
     
-    def _write_frame_group(self, buf, start_frame_id):
-        pass
-    
-    
-    def _write_file_content(self, buf, wave_header=None):
+    def _write_file_content(self, buf, calc_samples, wave_header=None):
         #Write wave header
         if wave_header is not None:
             yield wave_header
@@ -260,7 +257,6 @@ class Track:
         has_frames = True
         frame_num = 0
         samples_written = 0
-        calc_samples = buf.get_calc_total_samples()
         
         #Loop while buffer tells to do so
         while has_frames:
@@ -367,6 +363,20 @@ class Track:
             return track
     
     
+    def _create_dummy_frame(self):
+        """
+        Create a dummy frame with default format.
+        """
+        return QueueItem(
+            '',
+            1,
+            SampleType.Int16NativeEndian,
+            44100,
+            2,
+            1.0 / 44100,
+        )
+    
+    
     @cherrypy.expose
     def default(self, track_id, **kwargs):
         #Check sanity of the request
@@ -378,13 +388,24 @@ class Track:
         #And load the track object
         track = self._load_track(track_id)
         
-        #Open the buffer
-        buf = self.__audio_buffer.open(self.__session, track)
+        #Get the first frame of the track
+        if cherrypy.request.method.upper() == 'GET':
+            buf = self.__audio_buffer.open(self.__session, track)
+            frame, has_frames = buf.get_frame_wait(0)
+        
+        #Or just create a fake one
+        else:
+            frame = self._create_dummy_frame()
+        
+        
+        #Calculate the total number of samples in the track
+        num_samples = self._get_total_samples(frame, track)
+        
         
         #It's a partial request
         if 'Range' in cherrypy.request.headers:
             #Calculate file size, and obtaine the header
-            wave_header, filesize = self._generate_file_header(buf)
+            wave_header, filesize = self._generate_file_header(frame, num_samples)
             
             #Parse the ranges
             r1, r2 = self._parse_ranges()
@@ -399,7 +420,7 @@ class Track:
                 cherrypy.response.headers['Content-Range'] = 'bytes %d-%d/%d' % args
                 self._write_http_headers(filesize-r1)
                 if cherrypy.request.method.upper() == 'GET':
-                    return self._write_file_content(buf)
+                    return self._write_file_content(buf, num_samples)
             
             #For other situations throw an error
             else:
@@ -409,10 +430,10 @@ class Track:
         #A normal request
         else:
             #Calculate file size, and obtain the header
-            wave_header, filesize = self._generate_file_header(buf)
+            wave_header, filesize = self._generate_file_header(frame, num_samples)
             self._write_http_headers(filesize)
             if cherrypy.request.method.upper() == 'GET':
-                return self._write_file_content(buf, wave_header)
+                return self._write_file_content(buf, num_samples, wave_header)
             
     
     default._cp_config = {'response.stream': True}
