@@ -395,3 +395,7 @@ class BufferManager(AbstractBuffer):
     def stop(self):
         if self.__current_buffer is not None:
             self.__current_buffer.stop()
+    
+    
+    def cleanup(self):
+        self.__current_buffer = None

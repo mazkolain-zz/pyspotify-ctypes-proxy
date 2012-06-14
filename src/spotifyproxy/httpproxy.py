@@ -451,6 +451,12 @@ class Root:
         self.__session = session
         self.image = Image(session)
         self.track = Track(session, audio_buffer, base_token, on_stream_ended)
+    
+    
+    def cleanup(self):
+        self.__session = None
+        self.image = None
+        self.track = None
 
 
 
@@ -459,6 +465,7 @@ class ProxyRunner(threading.Thread):
     __audio_buffer = None
     __base_token = None
     __cb_stream_ended = None
+    __root = None
     
     
     def _find_free_port(self, host, port_list):
@@ -479,8 +486,10 @@ class ProxyRunner(threading.Thread):
         sess_ref = weakref.proxy(session)
         self.__base_token = create_base_token()
         self.__cb_stream_ended = DynamicCallback()
-        root = Root(sess_ref, audio_buffer, self.__base_token, self.__cb_stream_ended)
-        app = cherrypy.tree.mount(root, '/')
+        self.__root = Root(
+            sess_ref, audio_buffer, self.__base_token, self.__cb_stream_ended
+        )
+        app = cherrypy.tree.mount(self.__root, '/')
         self.__server = wsgiserver.CherryPyWSGIServer((host, port), app)
         threading.Thread.__init__(self)
     
@@ -514,3 +523,4 @@ class ProxyRunner(threading.Thread):
         self.__audio_buffer.stop()
         self.__server.stop()
         self.join(10)
+        self.__root.cleanup()
