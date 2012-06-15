@@ -196,8 +196,8 @@ class AudioBuffer(AbstractBuffer):
     
     def _purge_frames(self):
         while len(self.__frames) > 0:
-            #Never purge frames if we served less than 10s from the start
-            if self.__served_time < 10:
+            #Never purge frames if less than half of the buffer was served
+            if self.__served_time < self.__buffer_length / 2:
                 break
             
             #Break if reached to an undeletable frame
