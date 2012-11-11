@@ -153,12 +153,14 @@ class Track:
     __audio_buffer = None
     __is_playing = None
     __base_token = None
+    __allowed_ips = None
     
     
-    def __init__(self, session, audio_buffer, base_token, on_stream_ended):
+    def __init__(self, session, audio_buffer, base_token, allowed_ips, on_stream_ended):
         self.__session = session
         self.__audio_buffer = audio_buffer
         self.__base_token = base_token
+        self.__allowed_ips = allowed_ips
         self.__is_playing = False
         self.__cb_stream_ended = on_stream_ended
     
@@ -317,6 +319,10 @@ class Track:
         if 'User-Agent' not in headers or 'X-Spotify-Token' not in headers:
             raise cherrypy.HTTPError(403)
         
+        #Error if the requester is not allowed
+        if headers['Remote-Addr'] not in self.__allowed_ips:
+            raise cherrypy.HTTPError(403)
+        
         #Check that the supplied token is correct
         user_token = headers['X-Spotify-Token']
         user_agent = headers['User-Agent']
@@ -447,10 +453,12 @@ class Root:
     track = None
     
     
-    def __init__(self, session, audio_buffer, base_token, on_stream_ended):
+    def __init__(self, session, audio_buffer, base_token, allowed_ips, on_stream_ended):
         self.__session = session
         self.image = Image(session)
-        self.track = Track(session, audio_buffer, base_token, on_stream_ended)
+        self.track = Track(
+            session, audio_buffer, base_token, allowed_ips, on_stream_ended
+        )
     
     
     def cleanup(self):
@@ -464,6 +472,7 @@ class ProxyRunner(threading.Thread):
     __server = None
     __audio_buffer = None
     __base_token = None
+    __allowed_ips = None
     __cb_stream_ended = None
     __root = None
     
@@ -480,14 +489,16 @@ class ProxyRunner(threading.Thread):
         raise HTTPProxyError("Cannot find a free port. Tried: %s" % list_str)
     
     
-    def __init__(self, session, audio_buffer, host='localhost', try_ports=range(8080,8090)):
+    def __init__(self, session, audio_buffer, host='localhost', try_ports=range(8080,8090), allowed_ips=['127.0.0.1']):
         port = self._find_free_port(host, try_ports)
         self.__audio_buffer = audio_buffer
         sess_ref = weakref.proxy(session)
         self.__base_token = create_base_token()
+        self.__allowed_ips = allowed_ips
         self.__cb_stream_ended = DynamicCallback()
         self.__root = Root(
-            sess_ref, audio_buffer, self.__base_token, self.__cb_stream_ended
+            sess_ref, audio_buffer, self.__base_token, self.__allowed_ips,
+            self.__cb_stream_ended
         )
         app = cherrypy.tree.mount(self.__root, '/')
         self.__server = wsgiserver.CherryPyWSGIServer((host, port), app)
