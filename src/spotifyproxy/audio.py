@@ -270,14 +270,16 @@ class AudioBuffer(AbstractBuffer):
     
     
     def get_frame(self, frame_num):
-        #Raise error if buffer was stopped
-        if self.__playback_stopped:
-            raise BufferStoppedError()
-        
+    
         #What happens if this frame is not on the index?
-        elif frame_num not in self.__frames:
+        if frame_num not in self.__frames:
+            
+            #Buffer was stopped, and we depleted remaining frames
+            if self.__playback_stopped:
+                raise BufferStoppedError()
+             
             #Frame is no longer available
-            if frame_num < self.get_first_frame_in_buffer():
+            elif frame_num < self.get_first_frame_in_buffer():
                 print 'served: %f' % self.__served_time
                 raise BufferError("Frame number #%d gone, too late my friend." % frame_num)
             
@@ -306,9 +308,7 @@ class AudioBuffer(AbstractBuffer):
     
     
     def get_frame_wait(self, frame_num):
-        has_frames = True
-        
-        while has_frames:
+        while True:
             try:
                 return self.get_frame(frame_num)
             

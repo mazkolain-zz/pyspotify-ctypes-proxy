@@ -7,7 +7,7 @@ Created on 06/05/2011
 #Why the hell "import spotify" does not work?
 from spotify import image as _image, BulkConditionChecker, link, session, SampleType
 import threading, time, StringIO, cherrypy, re, struct
-from audio import QueueItem
+from audio import QueueItem, BufferStoppedError
 from cherrypy import wsgiserver
 from cherrypy.process import servers
 import weakref
@@ -257,6 +257,7 @@ class Track:
             yield wave_header
         
         has_frames = True
+        pad_with_silence = True
         frame_num = 0
         samples_written = 0
         
@@ -268,42 +269,51 @@ class Track:
             #Write 10 frames at a time ~88k
             #TODO: Should check written size, instead of a fixed frame num?
             while counter < 10 and has_frames:
-                frame, has_frames = buf.get_frame_wait(frame_num)
+                try:
+                    frame, has_frames = buf.get_frame_wait(frame_num)
+                    
+                    #Check if this frame fits in the estimated size
+                    if samples_written + frame.num_samples < calc_samples:
+                        file.write(frame.data)
+                        samples_written += frame.num_samples
+                    
+                    #We need to truncate the frame data
+                    else:
+                        sample_width = self._get_sample_width(frame.sample_type)
+                        sample_size = sample_width / 8 * frame.num_channels
+                        samples_left = calc_samples - samples_written
+                        truncate_size = samples_left * sample_size
+                        file.write(frame.data[:truncate_size])
+                        samples_written += samples_left
+                        has_frames = False
+                    
+                    #Update counters
+                    counter += 1
+                    frame_num += 1
                 
-                #Check if this frame fits in the estimated size
-                if samples_written + frame.num_samples < calc_samples:
-                    file.write(frame.data)
-                    samples_written += frame.num_samples
-                
-                #We need to truncate the frame data
-                else:
-                    sample_width = self._get_sample_width(frame.sample_type)
-                    sample_size = sample_width / 8 * frame.num_channels
-                    samples_left = calc_samples - samples_written
-                    truncate_size = samples_left * sample_size
-                    file.write(frame.data[:truncate_size])
-                    samples_written += samples_left
+                #Handle gracefully a buffer cancellation
+                except BufferStoppedError:
                     has_frames = False
-                
-                #Update counters
-                counter += 1
-                frame_num += 1
+                    pad_with_silence = False
             
-            #It's the last write, check written size
+            
+            #This was the last write
             if not has_frames:
-                #If estimated size was bigger than real, insert silence
-                if calc_samples > samples_written:
+            
+                #Check if we need to pad the file with silence
+                if pad_with_silence and calc_samples > samples_written:
                     samples_left = calc_samples - samples_written
                     sample_width = self._get_sample_width(frame.sample_type)
                     sample_size = sample_width / 8 * frame.num_channels
                     padding_size = samples_left * sample_size
                     file.write('\0' * padding_size)
                     samples_written += samples_left
-                
+                    
                 #Notify that the stream ended
                 self.__cb_stream_ended()
             
-            #Write the generated frame group
+            
+            #Write the generated data
             yield file.getvalue()
     
     
