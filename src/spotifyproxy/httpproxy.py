@@ -366,17 +366,15 @@ class Track:
         callbacks = TrackLoadCallback(checker)
         self.__session.add_callbacks(callbacks)
         
-        #Wait until it's done (should be enough)
-        checker.complete_wait(15)
+        try:
+            #Wait until it's done (should be enough)
+            checker.complete_wait(10)
         
-        #Remove that callback, or will be around forever
-        self.__session.remove_callbacks(callbacks)
+        finally:
+            #Remove that callback, or will be around forever
+            self.__session.remove_callbacks(callbacks)
         
-        #Fail if after the wait it's still unusable
-        if not track.is_loaded():
-            raise RuntimeError("Failed loading track %s" % track_id)
-        else:
-            return track
+        return track
     
     
     def _create_dummy_frame(self):
