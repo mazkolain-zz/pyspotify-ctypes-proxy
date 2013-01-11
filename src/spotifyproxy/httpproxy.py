@@ -5,7 +5,7 @@ Created on 06/05/2011
 '''
 
 #Why the hell "import spotify" does not work?
-from spotify import image as _image, BulkConditionChecker, link, session, SampleType
+from spotify import image as _image, BulkConditionChecker, link, session, SampleType, track as _track
 import threading, time, StringIO, cherrypy, re, struct
 from audio import QueueItem, BufferStoppedError
 from cherrypy import wsgiserver
@@ -391,6 +391,15 @@ class Track:
         )
     
     
+    def _check_track(self, track):
+        """
+        Check if the track is playable or not.
+        """
+        ta = track.get_availability(self.__session)
+        if ta != _track.TrackAvailability.Available:
+            raise cherrypy.HTTPError(403)
+    
+    
     @cherrypy.expose
     def default(self, track_id, **kwargs):
         #Check sanity of the request
@@ -401,6 +410,9 @@ class Track:
         
         #And load the track object
         track = self._load_track(track_id)
+        
+        #Check if it's playable, to avoid opening a useless buffer
+        self._check_track(track)
         
         #Get the first frame of the track
         if cherrypy.request.method.upper() == 'GET':
