@@ -251,70 +251,69 @@ class Track:
         )
     
     
-    def _write_file_content(self, buf, calc_samples, wave_header=None):
+    def _write_file_content(self, buf, filesize, wave_header=None, max_buffer_size=65535):
+        
+        #Initialize some loop vars
+        output_buffer = StringIO.StringIO()
+        bytes_written = 0
+        has_frames = True
+        frame_num = 0
+        
         #Write wave header
         if wave_header is not None:
+            output_buffer.write(wave_header)
+            bytes_written = output_buffer.tell()
             yield wave_header
+            output_buffer.truncate(0)
         
-        has_frames = True
-        pad_with_silence = True
-        frame_num = 0
-        samples_written = 0
-        
-        #Loop while buffer tells to do so
+        #Loop there's something to output
         while has_frames:
-            counter = 0
-            file = StringIO.StringIO()
+            
+            try:
+                frame, has_frames = buf.get_frame_wait(frame_num)
                 
-            #Write 10 frames at a time ~88k
-            #TODO: Should check written size, instead of a fixed frame num?
-            while counter < 10 and has_frames:
-                try:
-                    frame, has_frames = buf.get_frame_wait(frame_num)
-                    
-                    #Check if this frame fits in the estimated size
-                    if samples_written + frame.num_samples < calc_samples:
-                        file.write(frame.data)
-                        samples_written += frame.num_samples
-                    
-                    #We need to truncate the frame data
-                    else:
-                        sample_width = self._get_sample_width(frame.sample_type)
-                        sample_size = sample_width / 8 * frame.num_channels
-                        samples_left = calc_samples - samples_written
-                        truncate_size = samples_left * sample_size
-                        file.write(frame.data[:truncate_size])
-                        samples_written += samples_left
-                        has_frames = False
-                    
-                    #Update counters
-                    counter += 1
-                    frame_num += 1
+                #Check if this frame fits in the estimated calculation
+                if bytes_written + len(frame.data) < filesize:
+                    output_buffer.write(frame.data)
+                    bytes_written += len(frame.data)
+                
+                #Does not fit, we need to truncate the frame data
+                else:
+                    truncate_size = filesize - bytes_written
+                    output_buffer.write(frame.data[:truncate_size])
+                    bytes_written = filesize
+                    has_frames = False
+                
+                #Update counters
+                frame_num += 1
+            
+            except BufferStoppedError:
                 
                 #Handle gracefully a buffer cancellation
-                except BufferStoppedError:
-                    has_frames = False
-                    pad_with_silence = False
+                has_frames = False
             
+            finally:
+                
+                #Check if the current buffer needs to be flushed
+                if not has_frames or output_buffer.tell() > max_buffer_size:
+                    yield output_buffer.getvalue()
+                    output_buffer.truncate(0)
+        
+        #Add some silence padding until the end is reached (if needed)
+        while bytes_written < filesize:
             
-            #This was the last write
-            if not has_frames:
+            #The buffer size fits into the file size
+            if bytes_written + max_buffer_size < filesize:
+                yield '\0' * max_buffer_size
+                bytes_written += max_buffer_size
             
-                #Check if we need to pad the file with silence
-                if pad_with_silence and calc_samples > samples_written:
-                    samples_left = calc_samples - samples_written
-                    sample_width = self._get_sample_width(frame.sample_type)
-                    sample_size = sample_width / 8 * frame.num_channels
-                    padding_size = samples_left * sample_size
-                    file.write('\0' * padding_size)
-                    samples_written += samples_left
-                    
-                #Notify that the stream ended
-                self.__cb_stream_ended()
+            #Does not fit, just generate the remaining bytes
+            else:
+                yield '\0' * (filesize - bytes_written)
+                bytes_written = filesize
             
-            
-            #Write the generated data
-            yield file.getvalue()
+        #Notify that the stream ended
+        self.__cb_stream_ended()
     
     
     def _check_request(self):
@@ -446,7 +445,7 @@ class Track:
                 cherrypy.response.headers['Content-Range'] = 'bytes %d-%d/%d' % args
                 self._write_http_headers(filesize-r1)
                 if cherrypy.request.method.upper() == 'GET':
-                    return self._write_file_content(buf, num_samples)
+                    return self._write_file_content(buf, filesize)
             
             #For other situations throw an error
             else:
@@ -459,7 +458,7 @@ class Track:
             wave_header, filesize = self._generate_file_header(frame, num_samples)
             self._write_http_headers(filesize)
             if cherrypy.request.method.upper() == 'GET':
-                return self._write_file_content(buf, num_samples, wave_header)
+                return self._write_file_content(buf, filesize, wave_header)
             
     
     default._cp_config = {'response.stream': True}
