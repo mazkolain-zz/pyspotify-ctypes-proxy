@@ -540,6 +540,10 @@ class ProxyRunner(threading.Thread):
         return self.__server.bind_addr[1]
     
     
+    def get_host(self):
+        return self.__server.bind_addr[0]
+    
+    
     def get_user_token(self, user_agent):
         return create_user_token(self.__base_token, user_agent)
     
