@@ -165,15 +165,28 @@ class Track:
         self.__cb_stream_ended = on_stream_ended
     
     
-    def _get_clean_track_id(self, track_str):
-        #Fail if it's not a valid track id
-        r  = re.compile('[a-z0-9]{22}(\.wav)?$', re.IGNORECASE)
-        if r.match(track_str) is None:
-            raise cherrypy.HTTPError(404)
+    def _get_track_object(self, track_str):
         
         #Strip the optional extension...
         r = re.compile('\.wav$', re.IGNORECASE)
-        return re.sub(r, '', track_str)
+        track_id = re.sub(r, '', track_str)
+        
+        #Try to parse as a track
+        link_obj = link.create_from_string("spotify:track:%s" % track_id)
+        if link_obj is not None:
+            track_obj = link_obj.as_track()
+            self._load_track(track_obj)
+            return track_obj
+        
+        #Try to parse as a local track
+        link_obj = link.create_from_string("spotify:local:%s" % track_id)
+        if link_obj is not None:
+            track_obj = link_obj.as_track()
+            self._load_track(track_obj)
+            return track_obj
+        
+        #Fail if we reach this point
+        raise cherrypy.HTTPError(404)
     
     
     def _write_wave_header(self, numsamples, channels, samplerate, bitspersample):
@@ -355,13 +368,11 @@ class Track:
             return m.group(1), m.group(2)
     
     
-    def _load_track(self, track_id):
-        full_id = "spotify:track:%s" % track_id
-        track = link.create_from_string(full_id).as_track()
+    def _load_track(self, track_obj):
         
         #Set callbacks for loading the track
         checker = BulkConditionChecker()
-        checker.add_condition(track.is_loaded)
+        checker.add_condition(track_obj.is_loaded)
         callbacks = TrackLoadCallback(checker)
         self.__session.add_callbacks(callbacks)
         
@@ -372,8 +383,6 @@ class Track:
         finally:
             #Remove that callback, or will be around forever
             self.__session.remove_callbacks(callbacks)
-        
-        return track
     
     
     def _create_dummy_frame(self):
@@ -404,18 +413,15 @@ class Track:
         #Check sanity of the request
         self._check_request()
         
-        #Get the requested clean track
-        track_id = self._get_clean_track_id(track_id)
-        
-        #And load the track object
-        track = self._load_track(track_id)
+        #Get the object represented by the id
+        track_obj = self._get_track_object(track_id)
         
         #Check if it's playable, to avoid opening a useless buffer
-        self._check_track(track)
+        self._check_track(track_obj)
         
         #Get the first frame of the track
         if cherrypy.request.method.upper() == 'GET':
-            buf = self.__audio_buffer.open(self.__session, track)
+            buf = self.__audio_buffer.open(self.__session, track_obj)
             frame, has_frames = buf.get_frame_wait(0)
         
         #Or just create a fake one
@@ -424,7 +430,7 @@ class Track:
         
         
         #Calculate the total number of samples in the track
-        num_samples = self._get_total_samples(frame, track)
+        num_samples = self._get_total_samples(frame, track_obj)
         
         
         #It's a partial request
