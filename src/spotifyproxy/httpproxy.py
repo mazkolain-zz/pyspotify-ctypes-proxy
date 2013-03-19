@@ -422,49 +422,57 @@ class Track:
         #Get the first frame of the track
         if cherrypy.request.method.upper() == 'GET':
             buf = self.__audio_buffer.open(self.__session, track_obj)
-            frame, has_frames = buf.get_frame_wait(0)
+            frame = buf.get_frame_wait(0)[0]
         
         #Or just create a fake one
         else:
             frame = self._create_dummy_frame()
         
-        
         #Calculate the total number of samples in the track
         num_samples = self._get_total_samples(frame, track_obj)
         
+        #Calculate file size, and obtain the header
+        file_header, filesize = self._generate_file_header(frame, num_samples)
         
         #It's a partial request
         if 'Range' in cherrypy.request.headers:
-            #Calculate file size, and obtaine the header
-            wave_header, filesize = self._generate_file_header(frame, num_samples)
             
-            #Parse the ranges
+            #Get the ranges we where asked to deliver
             r1, r2 = self._parse_ranges()
             
-            #TODO: should use serve_fileobj, instead of fiddling with ranges manually 
+            #TODO: should use serve_fileobj, instead of fiddling with ranges manually
             
             #If we where asked to skip the header
-            if r1 == str(len(wave_header)) and r2 == '':
-                r1 = int(r1)
-                args = (r1, filesize-1, filesize)
-                cherrypy.response.status = 206
-                cherrypy.response.headers['Content-Range'] = 'bytes %d-%d/%d' % args
-                self._write_http_headers(filesize-r1)
-                if cherrypy.request.method.upper() == 'GET':
-                    return self._write_file_content(buf, filesize)
+            if r1 == str(len(file_header)) and r2 == '':
+                write_header = False
             
-            #For other situations throw an error
+            #Partial request, but asking for the entire file
+            elif r1 == '0' and r2 == '':
+                write_header = True
+            
+            #We don't understand this range request, throw an error
             else:
-                cherrypy.response.status = 416
                 self._write_http_headers(0)
+                raise cherrypy.HTTPError(416)
+            
+            #Set the appropriate headers
+            r1 = int(r1)
+            args = (r1, filesize-1, filesize)
+            cherrypy.response.status = 206
+            cherrypy.response.headers['Content-Range'] = 'bytes %d-%d/%d' % args
+            self._write_http_headers(filesize-r1)
         
-        #A normal request
+        #Just a normal (200) whole file request
         else:
-            #Calculate file size, and obtain the header
-            wave_header, filesize = self._generate_file_header(frame, num_samples)
             self._write_http_headers(filesize)
-            if cherrypy.request.method.upper() == 'GET':
-                return self._write_file_content(buf, filesize, wave_header)
+            write_header = True
+        
+        #If method was GET, write the file content
+        if cherrypy.request.method.upper() == 'GET':
+            if write_header:
+                return self._write_file_content(buf, filesize, file_header)
+            else:
+                return self._write_file_content(buf, filesize)
             
     
     default._cp_config = {'response.stream': True}
