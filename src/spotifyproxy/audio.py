@@ -85,7 +85,7 @@ class AudioBuffer(AbstractBuffer):
     #Current buffer length in seconds
     __buffer_length = None
     
-    #Total served time
+    #Total served time (shared among threads)
     __served_time = None
     
     #Number of samples in buffer (not used but required by libspotify)
@@ -109,9 +109,8 @@ class AudioBuffer(AbstractBuffer):
     #Currently playing track object
     __track = None
     
-    #Buffer pos update locl
-    __served_time_lock = None
-    
+    #Per thread specific data
+    __locals = None
     
     
     def __init__(self, session, track, max_buffer_length = 10):
@@ -127,7 +126,7 @@ class AudioBuffer(AbstractBuffer):
         self.__last_frame = -1
         self.__end_frame = -1
         self.__served_time = 0
-        self.__served_time_lock = threading.Lock()
+        self.__locals = threading.local()
         
         #Load the track
         self.__track = track
@@ -145,6 +144,10 @@ class AudioBuffer(AbstractBuffer):
         self.__calc_total_samples = int(
             track.duration() * frame.num_samples / framelen_ms
         )
+    
+    
+    def init_counters(self):
+        self.__locals.served_time = 0
     
     
     def _remove_first_frame(self):
@@ -262,15 +265,20 @@ class AudioBuffer(AbstractBuffer):
     
     
     def _update_served_time(self, frame):
-        self.__served_time_lock.acquire()
-        try:
-            self.__served_time += frame.frame_time
-        finally:
-            self.__served_time_lock.release()
+        
+        #FIXME: Figure out how to safely remove this test
+        #if not hasattr(self.__locals, 'served_time'):
+        #    self.__locals.served_time = 0
+        
+        self.__locals.served_time += frame.frame_time
+        
+        #If the number is higher, update the shared counter
+        if self.__locals.served_time > self.__served_time:
+            self.__served_time = self.__locals.served_time
     
     
     def get_frame(self, frame_num):
-    
+        
         #What happens if this frame is not on the index?
         if frame_num not in self.__frames:
             
@@ -280,7 +288,6 @@ class AudioBuffer(AbstractBuffer):
              
             #Frame is no longer available
             elif frame_num < self.get_first_frame_in_buffer():
-                print 'served: %f' % self.__served_time
                 raise BufferError("Frame number #%d gone, too late my friend." % frame_num)
             
             #If it's ahead of the buffer, it's an underrun
@@ -356,8 +363,10 @@ class BufferManager(AbstractBuffer):
     
     
     def open(self, session, track):
+        
         #If we can't share this buffer start a new one
         if not self._can_share_buffer(track):
+            
             #Stop current buffer if any
             if self.__current_buffer is not None:
                 self.__current_buffer.stop()
@@ -367,8 +376,15 @@ class BufferManager(AbstractBuffer):
                 session, track, self.__buffer_size
             )
             
+            #thread-specific initializations...
+            self.__current_buffer.init_counters()
+            
             #And start receiving data
             self.__current_buffer.start()
+        
+        #Just do the thread initializations
+        else:
+            self.__current_buffer.init_counters()
             
         return self.__current_buffer
     
