@@ -154,15 +154,17 @@ class Track:
     __is_playing = None
     __base_token = None
     __allowed_ips = None
+    __allow_ranges = None
     
     
-    def __init__(self, session, audio_buffer, base_token, allowed_ips, on_stream_ended):
+    def __init__(self, session, audio_buffer, base_token, allowed_ips, on_stream_ended, allow_ranges=True):
         self.__session = session
         self.__audio_buffer = audio_buffer
         self.__base_token = base_token
         self.__allowed_ips = allowed_ips
         self.__is_playing = False
         self.__cb_stream_ended = on_stream_ended
+        self.__allow_ranges = allow_ranges
     
     
     def _get_track_object(self, track_str):
@@ -434,8 +436,10 @@ class Track:
         #Calculate file size, and obtain the header
         file_header, filesize = self._generate_file_header(frame, num_samples)
         
+        
+        
         #It's a partial request
-        if 'Range' in cherrypy.request.headers:
+        if self.__allow_ranges and 'Range' in cherrypy.request.headers:
             
             #Get the ranges we where asked to deliver
             r1, r2 = self._parse_ranges()
@@ -486,11 +490,11 @@ class Root:
     track = None
     
     
-    def __init__(self, session, audio_buffer, base_token, allowed_ips, on_stream_ended):
+    def __init__(self, session, audio_buffer, base_token, allowed_ips, on_stream_ended, allow_ranges=True):
         self.__session = session
         self.image = Image(session)
         self.track = Track(
-            session, audio_buffer, base_token, allowed_ips, on_stream_ended
+            session, audio_buffer, base_token, allowed_ips, on_stream_ended, allow_ranges
         )
     
     
@@ -522,7 +526,7 @@ class ProxyRunner(threading.Thread):
         raise HTTPProxyError("Cannot find a free port. Tried: %s" % list_str)
     
     
-    def __init__(self, session, audio_buffer, host='localhost', try_ports=range(8080,8090), allowed_ips=['127.0.0.1']):
+    def __init__(self, session, audio_buffer, host='localhost', try_ports=range(8080,8090), allowed_ips=['127.0.0.1'], allow_ranges=True):
         port = self._find_free_port(host, try_ports)
         self.__audio_buffer = audio_buffer
         sess_ref = weakref.proxy(session)
@@ -531,7 +535,7 @@ class ProxyRunner(threading.Thread):
         self.__cb_stream_ended = DynamicCallback()
         self.__root = Root(
             sess_ref, audio_buffer, self.__base_token, self.__allowed_ips,
-            self.__cb_stream_ended
+            self.__cb_stream_ended, allow_ranges
         )
         app = cherrypy.tree.mount(self.__root, '/')
         self.__server = wsgiserver.CherryPyWSGIServer((host, port), app)
