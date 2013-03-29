@@ -4,7 +4,7 @@ Created on 12/05/2011
 @author: mikel
 '''
 import time
-from spotify import link, BulkConditionChecker, session
+from spotify import link, BulkConditionChecker, session, SampleType
 from collections import deque
 import threading
 
@@ -199,8 +199,8 @@ class AudioBuffer(AbstractBuffer):
     
     def _purge_frames(self):
         while len(self.__frames) > 0:
-            #Never purge frames if less than half of the buffer was served
-            if self.__served_time < self.__buffer_length / 2:
+            #Don't purge past the half of the buffer
+            if self.__buffer_length < self.__max_buffer_length * 0.5:
                 break
             
             #Break if reached to an undeletable frame
@@ -228,16 +228,42 @@ class AudioBuffer(AbstractBuffer):
             return -1
     
     
+    def _get_sample_width(self, sample_type):
+        #FIXME: Duplicate code Arghhhhh!
+        if sample_type == SampleType.Int16NativeEndian:
+            return 16
+        
+        else:
+            return -1
+    
+    
     def music_delivery(self, data, num_samples, sample_type, sample_rate, num_channels):
         #Calculate the length of this delivery in seconds
-        frame_time = 1.0 * num_samples / sample_rate
+        #frame_time = 1.0 * num_samples / sample_rate
         
-        #If buffer is full, purge and return
-        if self._will_fill_buffer(frame_time):
+        #Get the sample size for further calculations
+        sample_size = self._get_sample_width(sample_type) / 8 * num_channels
+        
+        while True:
+            
+            #Calculate the time on this payload
+            frame_time = 1.0 * num_samples / sample_rate
+            
+            #If the delivery does not fit, truncate it
+            if self._will_fill_buffer(frame_time) and num_samples > 0:
+                num_samples -= 1
+                data = data[:num_samples * sample_size]
+            
+            #It fits, break off the loop
+            else:
+                break
+        
+        #If there was no room for the frames, purge and return zero
+        if num_samples == 0:
             self._purge_frames()
             return 0
         
-        #Else append the data
+        #Otherwise add the data
         else:
             return self._append_frame(
                 data, num_samples,
@@ -266,15 +292,9 @@ class AudioBuffer(AbstractBuffer):
     
     def _update_served_time(self, frame):
         
-        #FIXME: Figure out how to safely remove this test
-        #if not hasattr(self.__locals, 'served_time'):
-        #    self.__locals.served_time = 0
-        
+        #Always update the served time.
         self.__locals.served_time += frame.frame_time
-        
-        #If the number is higher, update the shared counter
-        if self.__locals.served_time > self.__served_time:
-            self.__served_time = self.__locals.served_time
+        self.__served_time = self.__locals.served_time
     
     
     def get_frame(self, frame_num):
