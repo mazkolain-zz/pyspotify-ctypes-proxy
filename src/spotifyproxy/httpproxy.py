@@ -6,6 +6,7 @@ Created on 06/05/2011
 
 #Why the hell "import spotify" does not work?
 from spotify import image as _image, BulkConditionChecker, link, session, SampleType, track as _track
+from spotify.utils.loaders import load_track
 import threading, time, StringIO, cherrypy, re, struct
 from audio import QueueItem, BufferStoppedError
 from cherrypy import wsgiserver
@@ -177,14 +178,14 @@ class Track:
         link_obj = link.create_from_string("spotify:track:%s" % track_id)
         if link_obj is not None:
             track_obj = link_obj.as_track()
-            self._load_track(track_obj)
+            load_track(self.__session, track_obj)
             return track_obj
         
         #Try to parse as a local track
         link_obj = link.create_from_string("spotify:local:%s" % track_id)
         if link_obj is not None:
             track_obj = link_obj.as_track()
-            self._load_track(track_obj)
+            load_track(self.__session, track_obj)
             return track_obj
         
         #Fail if we reach this point
@@ -370,23 +371,6 @@ class Track:
             return m.group(1), m.group(2)
     
     
-    def _load_track(self, track_obj):
-        
-        #Set callbacks for loading the track
-        checker = BulkConditionChecker()
-        checker.add_condition(track_obj.is_loaded)
-        callbacks = TrackLoadCallback(checker)
-        self.__session.add_callbacks(callbacks)
-        
-        try:
-            #Wait until it's done (should be enough)
-            checker.complete_wait(10)
-        
-        finally:
-            #Remove that callback, or will be around forever
-            self.__session.remove_callbacks(callbacks)
-    
-    
     def _create_dummy_frame(self):
         """
         Create a dummy frame with default format.
@@ -456,6 +440,9 @@ class Track:
             
             #We don't understand this range request, throw an error
             else:
+                import xbmc
+                xbmc.log("*** HTTP 416 ERR ***")
+                xbmc.log("fs: %s; hs: %s; r1: %s; r2: %s" % (filesize, len(file_header), r1, r2))
                 self._write_http_headers(0)
                 raise cherrypy.HTTPError(416)
             
