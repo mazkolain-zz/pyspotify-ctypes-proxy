@@ -5,8 +5,8 @@ Created on 06/05/2011
 '''
 
 #Why the hell "import spotify" does not work?
-from spotify import image as _image, BulkConditionChecker, link, session, SampleType, track as _track
-from spotify.utils.loaders import load_track
+from spotify import image as _image, link, session, SampleType, track as _track
+from spotify.utils.loaders import load_track, load_image
 import threading, time, StringIO, cherrypy, re, struct
 from audio import QueueItem, BufferStoppedError
 from cherrypy import wsgiserver
@@ -113,26 +113,20 @@ class Image:
             raise cherrypy.HTTPError(405)
         
         clean_image_id = self._get_clean_image_id(image_id)
-        img = _image.create(self.__session, clean_image_id)
-        checker = BulkConditionChecker()
-        checker.add_condition(img.is_loaded)
-        img_cb = ImageCallbacks(checker)
-        img.add_load_callback(img_cb)
-        
-        #Wait 30 secs or timeout
-        checker.complete_wait(30)
+        img_obj = _image.create(self.__session, clean_image_id)
+        load_image(img_obj, 10)
         
         #Fail if image was not loaded or wrong format
-        if not img.is_loaded() or img.format() != _image.ImageFormat.JPEG:
+        if not img_obj.is_loaded() or img_obj.format() != _image.ImageFormat.JPEG:
             raise cherrypy.HTTPError(500)
         
         else:
             cherrypy.response.headers["Content-Type"] = "image/jpeg"
-            cherrypy.response.headers["Content-Length"] = len(img.data())
+            cherrypy.response.headers["Content-Length"] = len(img_obj.data())
             cherrypy.response.headers["Last-Modified"] = self.__last_modified
             
             if method == 'GET':
-                return img.data()
+                return img_obj.data()
 
 
 
