@@ -5,3 +5,5 @@ libs/*
 build
 dist
 src/PyspotifyCtypesProxy.egg-info
+*.pyc
+*.pyo
