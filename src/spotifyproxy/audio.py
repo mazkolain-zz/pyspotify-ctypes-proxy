@@ -4,7 +4,7 @@ Created on 12/05/2011
 @author: mikel
 '''
 import time
-from spotify import link, BulkConditionChecker, session, SampleType
+from spotify import link, session, SampleType
 from collections import deque
 import threading
 
