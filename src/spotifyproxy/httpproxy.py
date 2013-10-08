@@ -19,6 +19,8 @@ from utils import DynamicCallback
 #TODO: urllib 3.x compatibility
 import urllib2
 
+import logging
+
 
 
 class HTTPProxyError(Exception):
@@ -519,6 +521,13 @@ class ProxyRunner(threading.Thread):
             self.__cb_stream_ended, allow_ranges
         )
         app = cherrypy.tree.mount(self.__root, '/')
+        
+        #Don't log to the screen by default
+        log = app.log
+        log.access_file = ''
+        log.error_file = ''
+        log.screen = False
+        
         self.__server = wsgiserver.CherryPyWSGIServer((host, port), app)
         threading.Thread.__init__(self)
     
