@@ -436,9 +436,6 @@ class Track:
             
             #We don't understand this range request, throw an error
             else:
-                import xbmc
-                xbmc.log("*** HTTP 416 ERR ***")
-                xbmc.log("fs: %s; hs: %s; r1: %s; r2: %s" % (filesize, len(file_header), r1, r2))
                 self._write_http_headers(0)
                 raise cherrypy.HTTPError(416)
             
