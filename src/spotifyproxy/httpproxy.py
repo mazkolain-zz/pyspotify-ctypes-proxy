@@ -9,6 +9,7 @@ from spotify import image as _image, link, session, SampleType, track as _track
 from spotify.utils.loaders import load_track, load_image
 import threading, time, StringIO, cherrypy, re, struct
 from audio import QueueItem, BufferStoppedError
+import cherrypy
 from cherrypy import wsgiserver
 from cherrypy.process import servers
 import weakref
@@ -18,8 +19,9 @@ from utils import DynamicCallback
 
 #TODO: urllib 3.x compatibility
 import urllib2
+from utils import NullLogHandler
 
-import logging
+
 
 
 
@@ -520,10 +522,12 @@ class ProxyRunner(threading.Thread):
         app = cherrypy.tree.mount(self.__root, '/')
         
         #Don't log to the screen by default
-        log = app.log
+        log = cherrypy.log
         log.access_file = ''
         log.error_file = ''
         log.screen = False
+        log.access_log.addHandler(NullLogHandler())
+        log.error_log.addHandler(NullLogHandler())
         
         self.__server = wsgiserver.CherryPyWSGIServer((host, port), app)
         threading.Thread.__init__(self)

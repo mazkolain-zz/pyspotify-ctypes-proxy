@@ -5,6 +5,7 @@ Created on 06/06/2012
 '''
 import inspect
 from spotify.utils.weakmethod import WeakMethod
+import logging
 
 
 class DynamicCallback:
@@ -29,3 +30,20 @@ class DynamicCallback:
     def __call__(self, *args, **kwargs):
         if self.__callback is not None:
             self.__callback(*args, **kwargs)
+
+
+
+#Python < 2.7.x compatible null handler
+if not hasattr(logging, 'NullHandler'):
+    class NullLogHandler(logging.Handler):
+        def handle(self, record):
+            pass
+        
+        def emit(self, record):
+            pass
+        
+        def createLock(self):
+            self.lock = None
+
+else:
+    from logging import NullHandler as NullLogHandler
