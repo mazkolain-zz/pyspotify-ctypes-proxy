@@ -355,10 +355,12 @@ class AudioBuffer(AbstractBuffer):
 class BufferManager(AbstractBuffer):
     __current_buffer = None
     __buffer_size = None
+    __buffer_open_lock= None
     
     
     def __init__(self, buffer_size = 10):
         self.__buffer_size = buffer_size
+        self.__buffer_open_lock = threading.Lock()
     
     
     def _can_share_buffer(self, track):
@@ -377,21 +379,27 @@ class BufferManager(AbstractBuffer):
     
     def open(self, session, track):
         
-        #If we can't share this buffer start a new one
-        if not self._can_share_buffer(track):
-            
-            #Stop current buffer if any
-            if self.__current_buffer is not None:
-                self.__current_buffer.stop()
-            
-            #Create the new buffer
-            self.__current_buffer = AudioBuffer(
-                session, track, self.__buffer_size
-            )
-            
-            #And start receiving data
-            self.__current_buffer.start()
-            
+        self.__buffer_open_lock.acquire()
+        
+        try:
+            #If we can't share this buffer start a new one
+            if not self._can_share_buffer(track):
+                
+                #Stop current buffer if any
+                if self.__current_buffer is not None:
+                    self.__current_buffer.stop()
+                
+                #Create the new buffer
+                self.__current_buffer = AudioBuffer(
+                    session, track, self.__buffer_size
+                )
+                
+                #And start receiving data
+                self.__current_buffer.start()
+        
+        finally:
+            self.__buffer_open_lock.release()
+        
         return self.__current_buffer
     
     
