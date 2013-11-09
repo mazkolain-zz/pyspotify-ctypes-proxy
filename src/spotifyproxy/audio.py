@@ -112,6 +112,8 @@ class AudioBuffer(AbstractBuffer):
     #Per thread specific data
     __locals = None
     
+    #Stores the time the buffer started
+    __start_time = None
     
     def __init__(self, session, track, max_buffer_length = 10):
         self.__frames = deque()
@@ -197,10 +199,32 @@ class AudioBuffer(AbstractBuffer):
         return frame_time + self.__buffer_length > self.__max_buffer_length
     
     
+    def _buffer_init_purge_check(self):
+        return (
+            
+            #Do not calculate if the buffer was not consumed
+            self.__start_time is None or (
+            
+                #Keep this check for performance reasons
+                self.get_first_frame_in_buffer() <= 0 and
+                    
+                #Don't purge if opened less than x seconds ago.
+                #We check if this number is less than half the
+                #max length of the buffer.  
+                time.time() - self.__start_time < self.__max_buffer_length * 0.5
+            )
+        )
+    
+    
     def _purge_frames(self):
         while len(self.__frames) > 0:
+        
+            #If we are on the start, don't purge for some seconds
+            if self._buffer_init_purge_check():
+                break
+            
             #Don't purge past the half of the buffer
-            if self.__buffer_length < self.__max_buffer_length * 0.5:
+            elif self.__buffer_length < self.__max_buffer_length * 0.5:
                 break
             
             #Break if reached to an undeletable frame
@@ -330,6 +354,12 @@ class AudioBuffer(AbstractBuffer):
             
             #Flag to indicate if there are frames left
             has_frames = frame_num != self.__end_frame
+            
+            # Store the time buffer was first requested.
+            # Also, do not account frame #0, since it's immediately
+            # requested after __init__() 
+            if self.__start_time is None and frame_num != 0:
+                self.__start_time = time.time()
             
             return frame, has_frames
     
