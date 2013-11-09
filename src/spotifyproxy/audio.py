@@ -85,17 +85,11 @@ class AudioBuffer(AbstractBuffer):
     #Current buffer length in seconds
     __buffer_length = None
     
-    #Total served time (shared among threads)
-    __served_time = None
-    
     #Number of samples in buffer (not used but required by libspotify)
     __samples_in_buffer = None
     
     #Total samples delivered by libspotify
     __total_samples = None
-    
-    #Estimated number of total samples in track
-    __calc_total_samples = None
     
     #Session instance
     __session = None
@@ -108,9 +102,6 @@ class AudioBuffer(AbstractBuffer):
     
     #Currently playing track object
     __track = None
-    
-    #Per thread specific data
-    __locals = None
     
     #Stores the time the buffer started
     __start_time = None
@@ -127,8 +118,6 @@ class AudioBuffer(AbstractBuffer):
         self.__session = session
         self.__last_frame = -1
         self.__end_frame = -1
-        self.__served_time = 0
-        self.__locals = threading.local()
         
         #Load the track
         self.__track = track
@@ -138,18 +127,6 @@ class AudioBuffer(AbstractBuffer):
     def start(self):
         #Start receiving data
         self.__session.player_play(True)
-        
-        #Now that we may have data, calculate number of samples
-        frame, has_frames = self.get_frame_wait(0)
-        track = self.get_track()
-        framelen_ms = frame.frame_time * 1000
-        self.__calc_total_samples = int(
-            track.duration() * frame.num_samples / framelen_ms
-        )
-    
-    
-    def init_counters(self):
-        self.__locals.served_time = 0
     
     
     def _remove_first_frame(self):
@@ -306,19 +283,8 @@ class AudioBuffer(AbstractBuffer):
         return self.__total_samples
     
     
-    def get_calc_total_samples(self):
-        return self.__calc_total_samples
-    
-    
     def set_track_ended(self):
         self.__end_frame = self.get_last_frame_in_buffer()
-    
-    
-    def _update_served_time(self, frame):
-        
-        #Always update the served time.
-        self.__locals.served_time += frame.frame_time
-        self.__served_time = self.__locals.served_time
     
     
     def get_frame(self, frame_num):
@@ -348,9 +314,6 @@ class AudioBuffer(AbstractBuffer):
             if self.__last_frame < frame_num:
                 #Set if as the last requested one
                 self.__last_frame = frame_num
-                
-                #Update some counters
-                self._update_served_time(frame)
             
             #Flag to indicate if there are frames left
             has_frames = frame_num != self.__end_frame
@@ -426,15 +389,8 @@ class BufferManager(AbstractBuffer):
                 session, track, self.__buffer_size
             )
             
-            #thread-specific initializations...
-            self.__current_buffer.init_counters()
-            
             #And start receiving data
             self.__current_buffer.start()
-        
-        #Just do the thread initializations
-        else:
-            self.__current_buffer.init_counters()
             
         return self.__current_buffer
     
