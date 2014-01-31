@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='PyspotifyCtypesProxy',
-    version='0.4',
+    version='0.5',
     description='An embedded proxy server intended for players that cannot integrate libspotify easily.',
     author='Mikel Azkolain',
     author_email='azkotoki@gmail.com',
